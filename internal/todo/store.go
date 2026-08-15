@@ -81,6 +81,7 @@ CREATE TABLE IF NOT EXISTS links (
     kind    TEXT NOT NULL,
     ref     TEXT NOT NULL,
     note    TEXT NOT NULL DEFAULT '',
+    at      TEXT NOT NULL DEFAULT '',
     PRIMARY KEY (task_id, kind, ref)
 );
 CREATE INDEX IF NOT EXISTS links_by_ref ON links(kind, ref);
@@ -120,7 +121,37 @@ END;
 	// No migrations, deliberately: pre-1.0 there is no installed base, so the create statements
 	// above ARE the shape and an older database is re-imported rather than converted. A schema
 	// change edits them outright instead of accreting ALTERs behind them.
-	_, err := s.db.Exec(schema)
+	if _, err := s.db.Exec(schema); err != nil {
+		return err
+	}
+	// The one exception: a column added to a table that already holds data worth keeping — commit
+	// links carry real history that a re-import would lose. This is a forward-only add of a column
+	// with a default (no row is reshaped), not a back-compat conversion, so it is safe to run every
+	// open and does nothing once the column exists.
+	return s.ensureColumn("links", "at", "TEXT NOT NULL DEFAULT ''")
+}
+
+// ensureColumn adds a column to a table when it is absent, and does nothing when it is present, so
+// a database created before the column gains it without losing its rows.
+func (s *Store) ensureColumn(table, column, decl string) error {
+	rows, err := s.db.Query(`SELECT name FROM pragma_table_info(?)`, table)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = rows.Close() }()
+	for rows.Next() {
+		var name string
+		if err := rows.Scan(&name); err != nil {
+			return err
+		}
+		if name == column {
+			return rows.Err()
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return err
+	}
+	_, err = s.db.Exec(`ALTER TABLE ` + table + ` ADD COLUMN ` + column + ` ` + decl)
 	return err
 }
 

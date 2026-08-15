@@ -291,9 +291,9 @@ func runMCP(st *todo.Store) error {
 		})
 
 	mcp.AddTool(s, &mcp.Tool{Name: "task_commit",
-		Description: "Record a commit against a task (ref=sha, note=subject). A task accretes many over its life."},
+		Description: "Record a commit against a task (sha, note=subject, at=ISO 8601 commit date). A task accretes many over its life."},
 		func(_ context.Context, _ *mcp.CallToolRequest, in commitIn) (*mcp.CallToolResult, okOut, error) {
-			err := st.Link(in.TaskID, todo.LinkCommit, in.SHA, in.Note)
+			err := st.Link(in.TaskID, todo.LinkCommit, in.SHA, in.Note, in.At)
 			return okResult(err == nil, in.TaskID), okOut{OK: err == nil}, err
 		})
 
@@ -395,6 +395,7 @@ type commitIn struct {
 	TaskID string `json:"taskId"`
 	SHA    string `json:"sha"`
 	Note   string `json:"note,omitempty"`
+	At     string `json:"at,omitempty"` // commit date, ISO 8601; sync_commits fills this from git
 }
 type syncIn struct {
 	Dir string `json:"dir,omitempty"`

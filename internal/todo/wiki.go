@@ -74,15 +74,22 @@ func (s *Store) RestoreDoc(id string) (bool, error) {
 
 // Link adds an edge from a task — or from a doc — to a doc, commit or url. A doc source is what
 // relates pages to each other: a chapter to its README, a design to the threat model it answers.
-// Idempotent: the same edge twice is one.
-func (s *Store) Link(fromID, kind, ref, note string) error {
+// An optional at time-stamps the edge — a commit's date, in ISO 8601 — for the kinds that have a
+// when. Idempotent: the same edge twice is one; re-recording it with a date sets the date, and
+// re-recording without one keeps the date already there rather than clearing it.
+func (s *Store) Link(fromID, kind, ref, note string, at ...string) error {
 	if _, ok, err := s.Get(fromID); err != nil || !ok {
 		if _, ok, err := s.GetDoc(fromID); err != nil || !ok {
 			return fmt.Errorf("no such task or doc: %s", fromID)
 		}
 	}
-	_, err := s.db.Exec(`INSERT INTO links (task_id, kind, ref, note) VALUES (?,?,?,?)
-ON CONFLICT(task_id, kind, ref) DO UPDATE SET note=excluded.note`, fromID, kind, ref, note)
+	ts := ""
+	if len(at) > 0 {
+		ts = at[0]
+	}
+	_, err := s.db.Exec(`INSERT INTO links (task_id, kind, ref, note, at) VALUES (?,?,?,?,?)
+ON CONFLICT(task_id, kind, ref) DO UPDATE SET note=excluded.note,
+    at = CASE WHEN excluded.at <> '' THEN excluded.at ELSE links.at END`, fromID, kind, ref, note, ts)
 	return err
 }
 
@@ -101,7 +108,9 @@ func (s *Store) LinksOf(taskID, kind string) ([]Link, error) {
 		where += ` AND kind = ?`
 		args = append(args, kind)
 	}
-	rows, err := s.db.Query(`SELECT task_id, kind, ref, note FROM links `+where+` ORDER BY kind, ref`, args...)
+	// Commits sort newest first (their at is an ISO date that sorts lexically); other kinds have no
+	// date and fall back to ref order.
+	rows, err := s.db.Query(`SELECT task_id, kind, ref, note, at FROM links `+where+` ORDER BY kind, at DESC, ref`, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -109,7 +118,7 @@ func (s *Store) LinksOf(taskID, kind string) ([]Link, error) {
 	var out []Link
 	for rows.Next() {
 		var l Link
-		if err := rows.Scan(&l.TaskID, &l.Kind, &l.Ref, &l.Note); err != nil {
+		if err := rows.Scan(&l.TaskID, &l.Kind, &l.Ref, &l.Note, &l.At); err != nil {
 			return nil, err
 		}
 		out = append(out, l)

@@ -59,6 +59,7 @@ type Link struct {
 	Kind   string `json:"kind"`   // doc | commit | url
 	Ref    string `json:"ref"`    // doc id | commit sha | url
 	Note   string `json:"note,omitempty"`
+	At     string `json:"at,omitempty"` // when the edge is time-stamped: a commit's date (ISO 8601)
 }
 
 const (

@@ -15,6 +15,7 @@ type CommitLink struct {
 	TaskID  string
 	SHA     string
 	Subject string
+	Date    string // committer date, ISO 8601 (%cI)
 }
 
 // ScanCommits reads `git log` in dir and returns every (task id, commit) pair it finds — a commit
@@ -22,7 +23,7 @@ type CommitLink struct {
 // ("" scans all history; "v0.13.0..HEAD" scans since a tag). It only READS git; writing the edges
 // is SyncCommits, so the discovery is testable without a store.
 func ScanCommits(dir, rev string) ([]CommitLink, error) {
-	args := []string{"-C", dir, "log", "--no-merges", "--format=%H%x1f%s%x1f%b%x1e"}
+	args := []string{"-C", dir, "log", "--no-merges", "--format=%H%x1f%cI%x1f%s%x1f%b%x1e"}
 	if len(rev) > 0 {
 		args = append(args, rev)
 	}
@@ -36,14 +37,14 @@ func ScanCommits(dir, rev string) ([]CommitLink, error) {
 		if len(rec) == 0 {
 			continue
 		}
-		parts := strings.SplitN(rec, "\x1f", 3)
-		if len(parts) < 2 {
+		parts := strings.SplitN(rec, "\x1f", 4)
+		if len(parts) < 3 {
 			continue
 		}
-		sha, subject := parts[0], parts[1]
+		sha, date, subject := parts[0], parts[1], parts[2]
 		msg := subject
-		if len(parts) == 3 {
-			msg += "\n" + parts[2]
+		if len(parts) == 4 {
+			msg += "\n" + parts[3]
 		}
 		seen := map[string]bool{}
 		for _, m := range taskRef.FindAllString(msg, -1) {
@@ -51,7 +52,7 @@ func ScanCommits(dir, rev string) ([]CommitLink, error) {
 				continue
 			}
 			seen[m] = true
-			links = append(links, CommitLink{TaskID: m, SHA: sha, Subject: subject})
+			links = append(links, CommitLink{TaskID: m, SHA: sha, Subject: subject, Date: date})
 		}
 	}
 	return links, nil
@@ -73,7 +74,7 @@ func (s *Store) SyncCommits(dir, rev string) (int, error) {
 		} else if !ok {
 			continue
 		}
-		if err := s.Link(cl.TaskID, LinkCommit, cl.SHA, cl.Subject); err != nil {
+		if err := s.Link(cl.TaskID, LinkCommit, cl.SHA, cl.Subject, cl.Date); err != nil {
 			return n, err
 		}
 		n++

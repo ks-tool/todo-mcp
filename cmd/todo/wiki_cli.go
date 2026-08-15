@@ -231,10 +231,11 @@ func wikiCommands() []*cobra.Command {
 	commit := &cobra.Command{
 		Use: "commit <task-id> <sha>", Short: "record a commit against a task", Args: cobra.ExactArgs(2),
 		RunE: withStore(func(st *todo.Store, cmd *cobra.Command, args []string) error {
-			return st.Link(args[0], todo.LinkCommit, args[1], mustFlag(cmd, "note"))
+			return st.Link(args[0], todo.LinkCommit, args[1], mustFlag(cmd, "note"), mustFlag(cmd, "at"))
 		}),
 	}
 	commit.Flags().String("note", "", "the commit subject")
+	commit.Flags().String("at", "", "commit date, ISO 8601 (e.g. from git show -s --format=%cI)")
 
 	commits := &cobra.Command{
 		Use: "commits <task-id>", Short: "the commits recorded against a task", Args: cobra.ExactArgs(1),
@@ -250,7 +251,7 @@ func wikiCommands() []*cobra.Command {
 				}
 			} else {
 				for _, l := range links {
-					fmt.Printf("%s  %s\n", l.Ref, l.Note)
+					fmt.Printf("%-12s  %-16s  %s\n", l.Ref, whenShort(l.At), l.Note)
 				}
 			}
 			if len(links) == 0 {

@@ -658,7 +658,7 @@ func (m *tui) detailContent() string {
 	if commits, _ := m.store.CommitsOf(t.ID); len(commits) > 0 {
 		writeln(stSect.Render("commits"))
 		for _, c := range commits {
-			writeln("  " + c.Ref + "  " + stDim.Render(oneLine(c.Note, 46)))
+			writeln("  " + c.Ref + "  " + stDim.Render(whenShort(c.At)+"  "+oneLine(c.Note, 40)))
 		}
 	}
 	return b.String()
