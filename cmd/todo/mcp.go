@@ -240,6 +240,45 @@ func runMCP(st *todo.Store) error {
 			return okResult(err == nil, in.TaskID), okOut{OK: err == nil}, err
 		})
 
+	mcp.AddTool(s, &mcp.Tool{Name: "doc_edit",
+		Description: "Change named fields of a wiki page: path, title, kind (design|threat-model|note|adr|reference), body. Only the fields given are touched; the id never changes, so every link to the page survives a rename."},
+		func(_ context.Context, _ *mcp.CallToolRequest, in docEditIn) (*mcp.CallToolResult, okOut, error) {
+			d, ok, err := st.GetDoc(in.ID)
+			if err != nil || !ok {
+				return notFound(in.ID), okOut{}, err
+			}
+			for _, f := range []struct {
+				v   string
+				dst *string
+			}{{in.Path, &d.Path}, {in.Title, &d.Title}, {in.Kind, &d.Kind}, {in.Body, &d.Body}} {
+				if len(f.v) > 0 {
+					*f.dst = f.v
+				}
+			}
+			err = st.PutDoc(d)
+			return okResult(err == nil, in.ID), okOut{OK: err == nil}, err
+		})
+
+	mcp.AddTool(s, &mcp.Tool{Name: "doc_delete",
+		Description: "Soft-delete a wiki page: stamped deleted_at, restorable — the same trash the tasks have."},
+		func(_ context.Context, _ *mcp.CallToolRequest, in idIn) (*mcp.CallToolResult, okOut, error) {
+			ok, err := st.DeleteDoc(in.ID, time.Now().Format(time.RFC3339))
+			return okResult(ok, in.ID), okOut{OK: ok}, err
+		})
+
+	mcp.AddTool(s, &mcp.Tool{Name: "doc_restore", Description: "Restore a soft-deleted wiki page."},
+		func(_ context.Context, _ *mcp.CallToolRequest, in idIn) (*mcp.CallToolResult, okOut, error) {
+			ok, err := st.RestoreDoc(in.ID)
+			return okResult(ok, in.ID), okOut{OK: ok}, err
+		})
+
+	mcp.AddTool(s, &mcp.Tool{Name: "link_slugs",
+		Description: "Link every task to the doc its slug names — the exact path, or the single page of that name inside any section. Idempotent; returns how many edges the bridge holds."},
+		func(_ context.Context, _ *mcp.CallToolRequest, _ struct{}) (*mcp.CallToolResult, linkSlugsOut, error) {
+			n, err := st.LinkDocsBySlug()
+			return result(n), linkSlugsOut{Linked: n}, err
+		})
+
 	mcp.AddTool(s, &mcp.Tool{Name: "task_docs", Description: "The wiki pages a task is mapped to — metadata only; doc_show returns a body."},
 		func(_ context.Context, _ *mcp.CallToolRequest, in taskIDIn) (*mcp.CallToolResult, docMetasOut, error) {
 			ds, err := st.DocsOf(in.TaskID)
@@ -341,6 +380,16 @@ type linkIn struct {
 	DocID  string `json:"docId"`
 	Note   string `json:"note,omitempty"`
 	Del    bool   `json:"del,omitempty"`
+}
+type docEditIn struct {
+	ID    string `json:"id"`
+	Path  string `json:"path,omitempty"`
+	Title string `json:"title,omitempty"`
+	Kind  string `json:"kind,omitempty"`
+	Body  string `json:"body,omitempty"`
+}
+type linkSlugsOut struct {
+	Linked int `json:"linked"`
 }
 type commitIn struct {
 	TaskID string `json:"taskId"`

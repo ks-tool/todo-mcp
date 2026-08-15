@@ -102,6 +102,32 @@ func TestMCPServerAnswersOverStdio(t *testing.T) {
 	if added.Task == nil || added.Task.Epic != "rooted" {
 		t.Fatalf("an epicless add must land in TODO_EPIC, got %+v", added.Task)
 	}
+
+	// The wiki write path end to end: create a page, edit ONE field, and check the others rode
+	// through — over MCP an omitted field means "leave it", and that contract is what this pins.
+	if _, err = session.CallTool(ctx, &mcp.CallToolParams{
+		Name: "doc_add", Arguments: map[string]any{"path": "auth/page", "kind": "design", "body": "the body"},
+	}); err != nil {
+		t.Fatal("call doc_add:", err)
+	}
+	if _, err = session.CallTool(ctx, &mcp.CallToolParams{
+		Name: "doc_edit", Arguments: map[string]any{"id": "doc-auth-page", "kind": "threat-model"},
+	}); err != nil {
+		t.Fatal("call doc_edit:", err)
+	}
+	res, err = session.CallTool(ctx, &mcp.CallToolParams{
+		Name: "doc_show", Arguments: map[string]any{"id": "doc-auth-page"},
+	})
+	if err != nil {
+		t.Fatal("call doc_show:", err)
+	}
+	var shown struct {
+		Doc *todo.Doc `json:"doc"`
+	}
+	mustDecode(t, res, &shown)
+	if shown.Doc == nil || shown.Doc.Kind != "threat-model" || shown.Doc.Body != "the body" || shown.Doc.Path != "auth/page" {
+		t.Fatalf("doc_edit must change only the field given: %+v", shown.Doc)
+	}
 }
 
 // mustDecode reads the structured content of a tool result into v.
