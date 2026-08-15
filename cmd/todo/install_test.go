@@ -86,7 +86,7 @@ func TestClaudeBlockIsOwnedBetweenMarkers(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "CLAUDE.md")
 
 	// No file: created holding just the block, naming the project's epic.
-	if err := upsertBlock(path, claudeBlock("myproj")); err != nil {
+	if err := upsertBlock(path, claudeBlock([]string{"myproj"})); err != nil {
 		t.Fatal(err)
 	}
 	// A user writes around it.
@@ -99,8 +99,9 @@ func TestClaudeBlockIsOwnedBetweenMarkers(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// A second install replaces between the markers — the epic with it — and keeps the user's text.
-	if err := upsertBlock(path, claudeBlock("renamed")); err != nil {
+	// A second install replaces between the markers — the epics with it, here a LIST whose first
+	// entry the block must name as where an epicless add lands — and keeps the user's text.
+	if err := upsertBlock(path, claudeBlock([]string{"renamed", "api"})); err != nil {
 		t.Fatal(err)
 	}
 	b, _ = os.ReadFile(path)
@@ -111,8 +112,8 @@ func TestClaudeBlockIsOwnedBetweenMarkers(t *testing.T) {
 	if !strings.Contains(s, "# my own header") || !strings.Contains(s, "my own footer") {
 		t.Error("re-install disturbed the user's own text")
 	}
-	if strings.Contains(s, "myproj") || !strings.Contains(s, "`renamed` epic") {
-		t.Error("re-install must replace the epic name, not keep the old block")
+	if strings.Contains(s, "myproj") || !strings.Contains(s, "`renamed`, `api`") || !strings.Contains(s, "lands in `renamed`") {
+		t.Error("re-install must replace the epic list and name the first as the root")
 	}
 
 	// Removal takes the block and nothing else.
@@ -132,7 +133,7 @@ func TestClaudeBlockIsOwnedBetweenMarkers(t *testing.T) {
 	if err := os.WriteFile(path, []byte("x\n"+blockBegin+"\norphan\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if err := upsertBlock(path, claudeBlock("myproj")); err == nil {
+	if err := upsertBlock(path, claudeBlock([]string{"myproj"})); err == nil {
 		t.Error("an orphaned begin marker must refuse the upsert")
 	}
 }

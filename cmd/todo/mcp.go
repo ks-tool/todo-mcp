@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	"fmt"
-	"os"
 	"time"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -104,13 +103,13 @@ func runMCP(st *todo.Store) error {
 	// --- writes ---
 
 	mcp.AddTool(s, &mcp.Tool{Name: "todo_add",
-		Description: "Create a task. text is required; epic defaults to the project's root epic (the TODO_EPIC install wrote); tags, priority, slug, dep, touchpoints optional. The id is minted and returned."},
+		Description: "Create a task. text is required; epic defaults to the project's root epic (the first of the TODO_EPICS install wrote); tags, priority, slug, dep, touchpoints optional. The id is minted and returned."},
 		func(_ context.Context, _ *mcp.CallToolRequest, in addIn) (*mcp.CallToolResult, taskOut, error) {
 			if len(in.Epic) == 0 {
-				in.Epic = os.Getenv("TODO_EPIC")
+				in.Epic = rootEpic()
 			}
 			if len(in.Epic) == 0 || len(in.Text) == 0 {
-				return errText("text is required, and an epic — none given and no TODO_EPIC is set"), taskOut{}, nil
+				return errText("text is required, and an epic — none given and no TODO_EPICS is set"), taskOut{}, nil
 			}
 			id, err := st.NextID(in.Epic)
 			if err != nil {
@@ -132,11 +131,11 @@ func runMCP(st *todo.Store) error {
 		})
 
 	mcp.AddTool(s, &mcp.Tool{Name: "todo_edit",
-		Description: "Change named fields of a task: priority, epic, slug, text, dep, tags (comma-separated), status. Only the fields given are touched."},
+		Description: "Change named fields of a task: priority, epic, slug, text, dep, tags (comma-separated), touch (comma-separated file touchpoints), status. Only the fields given are touched."},
 		func(_ context.Context, _ *mcp.CallToolRequest, in editIn) (*mcp.CallToolResult, okOut, error) {
 			fields := map[string]string{}
 			for k, v := range map[string]string{"priority": in.Priority, "epic": in.Epic, "slug": in.Slug,
-				"text": in.Text, "dep": in.Dep, "tags": in.Tags, "status": in.Status} {
+				"text": in.Text, "dep": in.Dep, "tags": in.Tags, "touch": in.Touch, "status": in.Status} {
 				if len(v) > 0 {
 					fields[k] = v
 				}
@@ -339,7 +338,7 @@ type suggestIn struct {
 type addIn struct {
 	Tags []string `json:"tags,omitempty"`
 	// omitempty is load-bearing: without it the SDK derives a schema with epic REQUIRED and rejects
-	// an epicless call before the handler can apply the TODO_EPIC default.
+	// an epicless call before the handler can apply the TODO_EPICS default.
 	Epic     string   `json:"epic,omitempty"`
 	Priority string   `json:"priority,omitempty"`
 	Slug     string   `json:"slug,omitempty"`
@@ -355,6 +354,7 @@ type editIn struct {
 	Text     string `json:"text,omitempty"`
 	Dep      string `json:"dep,omitempty"`
 	Tags     string `json:"tags,omitempty"`
+	Touch    string `json:"touch,omitempty"`
 	Status   string `json:"status,omitempty"`
 }
 type depIn struct {

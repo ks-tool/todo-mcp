@@ -16,11 +16,12 @@ import (
 // The command path is this very binary, resolved absolute: an MCP host does not inherit the
 // caller's PATH, and "todo" bare would work in one shell and fail in the host. The database is the
 // XDG default unless --db points somewhere; one database with projects as epics is the intended
-// shape, so a per-project file is the exception and asking for it is explicit. The epic is that
-// shape made concrete: install records which epic IS this project — in the server's environment as
-// TODO_EPIC, where an add without an epic lands, and by name in the CLAUDE.md block, so an agent
-// files work where the project keeps it instead of minting an epic per conversation.
-func runInstall(dir, db, epic, instructions string) error {
+// shape, so a per-project file is the exception and asking for it is explicit. The epics are that
+// shape made concrete: install records which epics ARE this project — in the server's environment
+// as TODO_EPICS (comma-separated; an add without an epic lands in the first), and by name in the
+// CLAUDE.md block, so an agent files work where the project keeps it instead of minting an epic
+// per conversation.
+func runInstall(dir, db string, epics []string, instructions string) error {
 	self, err := os.Executable()
 	if err != nil {
 		return fmt.Errorf("resolve this binary: %w", err)
@@ -29,7 +30,7 @@ func runInstall(dir, db, epic, instructions string) error {
 		return err
 	}
 
-	env := map[string]string{"TODO_EPIC": epic}
+	env := map[string]string{"TODO_EPICS": strings.Join(epics, ",")}
 	if len(db) > 0 {
 		abs, err := filepath.Abs(db)
 		if err != nil {
@@ -48,11 +49,11 @@ func runInstall(dir, db, epic, instructions string) error {
 	if err := writeMCPConfig(path, cfg); err != nil {
 		return err
 	}
-	fmt.Fprintf(os.Stderr, "wired the todo MCP server into %s (root epic: %s)\n", path, epic)
+	fmt.Fprintf(os.Stderr, "wired the todo MCP server into %s (epics: %s)\n", path, strings.Join(epics, ", "))
 
 	if instructions != instructionsNone {
 		md := filepath.Join(dir, instructions)
-		if err := upsertBlock(md, claudeBlock(epic)); err != nil {
+		if err := upsertBlock(md, claudeBlock(epics)); err != nil {
 			return err
 		}
 		fmt.Fprintf(os.Stderr, "kept the usage block in %s current\n", md)
@@ -96,26 +97,30 @@ func runUninstall(dir, instructions string) error {
 
 // The agent-facing instructions install maintains in CLAUDE.md, between markers it owns. The MCP
 // tools already self-describe over the protocol, so this stays short: what lives here, which way to
-// reach it, and the two conventions the schema cannot say — this project's epic by name, and what
+// reach it, and the two conventions the schema cannot say — this project's epics by name, and what
 // tags are for.
 const (
 	blockBegin = "<!-- todo-mcp:begin -->"
 	blockEnd   = "<!-- todo-mcp:end -->"
 )
 
-func claudeBlock(epic string) string {
+func claudeBlock(epics []string) string {
+	list := "`" + strings.Join(epics, "`, `") + "`"
+	where := "This project's epics are " + list + " — an add without an epic lands in `" + epics[0] + "`"
+	if len(epics) == 1 {
+		where = "This project's tasks live under the " + list + " epic — an add without an epic lands there"
+	}
 	return blockBegin + `
 ## backlog + wiki — the todo tool
 
 The project's tasks and design docs live in one SQLite backlog served by the ` + "`todo`" + ` MCP server
 (wired in ` + "`.mcp.json`" + `). Prefer the MCP tools (` + "`todo_list`, `todo_ready`, `doc_list`, `doc_show`" + `,
 ...) — they return structured data; the ` + "`todo`" + ` CLI answers the same questions in a shell
-(` + "`todo ready`, `todo doc list --search <q>`, `todo docs <task-id>`" + `). This project's tasks live
-under the ` + "`" + epic + "`" + ` epic — an add without an epic lands there, and other epics in the same
-database are other projects. TAGS are free labels for slicing, and the ` + "`tag`" + ` filter takes a
-comma list a task must carry all of (` + "`todo_list {tag: \"ee,scheduler\"}`" + `). Record finished work
-with ` + "`todo_done`" + ` and map commits with ` + "`sync_commits`" + `; deletion is always soft (trash +
-restore), so nothing is lost to a wrong call.
+(` + "`todo ready`, `todo doc list --search <q>`, `todo docs <task-id>`" + `). ` + where + `, and epics
+outside this list are other projects. TAGS are free labels for slicing, and the ` + "`tag`" + ` filter
+takes a comma list a task must carry all of (` + "`todo_list {tag: \"ee,scheduler\"}`" + `). Record
+finished work with ` + "`todo_done`" + ` and map commits with ` + "`sync_commits`" + `; deletion is always
+soft (trash + restore), so nothing is lost to a wrong call.
 ` + blockEnd + "\n"
 }
 

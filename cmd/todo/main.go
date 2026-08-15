@@ -239,9 +239,9 @@ func taskCommands() []*cobra.Command {
 			if len(text) == 0 {
 				text = strings.Join(args, " ")
 			}
-			epic := firstNonEmpty(mustFlag(cmd, "epic"), os.Getenv("TODO_EPIC"))
+			epic := firstNonEmpty(mustFlag(cmd, "epic"), rootEpic())
 			if len(strings.TrimSpace(epic)) == 0 || len(strings.TrimSpace(text)) == 0 {
-				return fmt.Errorf("add needs an epic (--epic, or the TODO_EPIC install writes) and the text")
+				return fmt.Errorf("add needs an epic (--epic, or the first of the TODO_EPICS install writes) and the text")
 			}
 			id, err := st.NextID(epic)
 			if err != nil {
@@ -273,7 +273,7 @@ func taskCommands() []*cobra.Command {
 		Use: "edit <id>", Short: "change named fields of a task", Args: cobra.ExactArgs(1),
 		RunE: withStore(func(st *todo.Store, cmd *cobra.Command, args []string) error {
 			fields := map[string]string{}
-			for _, k := range []string{"priority", "epic", "slug", "text", "dep", "tags", "status"} {
+			for _, k := range []string{"priority", "epic", "slug", "text", "dep", "tags", "touch", "status"} {
 				if cmd.Flags().Changed(k) {
 					fields[k] = mustFlag(cmd, k)
 				}
@@ -293,7 +293,7 @@ func taskCommands() []*cobra.Command {
 			return nil
 		}),
 	}
-	for _, k := range []string{"priority", "epic", "slug", "text", "dep", "tags", "status"} {
+	for _, k := range []string{"priority", "epic", "slug", "text", "dep", "tags", "touch", "status"} {
 		edit.Flags().String(k, "", "new "+k)
 	}
 
@@ -455,23 +455,24 @@ func frontCommands() []*cobra.Command {
 	}
 	install := &cobra.Command{
 		Use: "install", Short: "wire the MCP server into the project's .mcp.json and CLAUDE.md", Args: cobra.NoArgs,
-		// The epic names which slice of the shared database IS this project; unnamed, it defaults
-		// to the project directory's own name, which is what a person would have typed.
+		// The epics name which slices of the shared database ARE this project; the first is the
+		// root. Unnamed, the list defaults to the project directory's own name, which is what a
+		// person would have typed.
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			dir := mustFlag(cmd, "dir")
-			epic := mustFlag(cmd, "epic")
-			if len(epic) == 0 {
+			epics := splitComma(mustFlag(cmd, "epics"))
+			if len(epics) == 0 {
 				abs, err := filepath.Abs(dir)
 				if err != nil {
 					return err
 				}
-				epic = filepath.Base(abs)
+				epics = []string{filepath.Base(abs)}
 			}
-			return runInstall(dir, flagDB, epic, mustFlag(cmd, "instructions"))
+			return runInstall(dir, flagDB, epics, mustFlag(cmd, "instructions"))
 		},
 	}
 	install.Flags().String("dir", ".", "project directory")
-	install.Flags().String("epic", "", "the project's root epic (default: the directory's name)")
+	install.Flags().String("epics", "", "the project's epics, comma-separated; the first is the root (default: the directory's name)")
 	install.Flags().String("instructions", instructionsDefault, "file for the agent usage block (e.g. AGENTS.md); 'none' writes no block")
 	uninstall := &cobra.Command{
 		Use: "uninstall", Short: "remove the todo entry and the instructions block", Args: cobra.NoArgs,
@@ -654,7 +655,7 @@ func emitSchema() {
 			"ready": "open tasks with all deps done", "next": "the top ready task",
 			"show": "<id> — one task", "impact": "<id> — tasks depending on it",
 			"stats": "counts per epic", "done": "<id>", "reopen": "<id>",
-			"add":  "[--epic <e>] [--tags --priority --slug --touch --dep] <text> — epic defaults to $TODO_EPIC",
+			"add":  "[--epic <e>] [--tags --priority --slug --touch --dep] <text> — epic defaults to the first of $TODO_EPICS",
 			"edit": "<id> [--priority --epic --slug --text --dep --status]",
 			"dep":  "<id> <depends-on-id> [--del]", "suggest": "<id> [--apply]",
 			"delete": "<id> — soft-delete to trash", "restore": "<id>", "trash": "the soft-deleted",

@@ -314,6 +314,8 @@ func (s *Store) Update(id string, fields map[string]string) (bool, error) {
 			t.Text = v
 		case "dep":
 			t.DepText = v
+		case "touch":
+			t.Touch = splitList(v)
 		case "status":
 			t.Status = Status(v)
 		}

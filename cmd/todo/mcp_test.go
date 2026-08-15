@@ -38,7 +38,7 @@ func TestMCPServerAnswersOverStdio(t *testing.T) {
 	defer cancel()
 
 	cmd := exec.Command(bin, "mcp")
-	cmd.Env = append(os.Environ(), "TODO_DB="+db, "TODO_EPIC=rooted")
+	cmd.Env = append(os.Environ(), "TODO_DB="+db, "TODO_EPICS=rooted, second")
 	client := mcp.NewClient(&mcp.Implementation{Name: "test", Version: "0"}, nil)
 	session, err := client.Connect(ctx, &mcp.CommandTransport{Command: cmd}, nil)
 	if err != nil {
@@ -89,8 +89,9 @@ func TestMCPServerAnswersOverStdio(t *testing.T) {
 		t.Fatalf("todo_add returned the pre-write struct: priority P3 must come back with rank 3, got %d", added.Task.Rank)
 	}
 
-	// An add WITHOUT an epic lands in the project's root epic — the TODO_EPIC that install writes
-	// into the server's environment — rather than erroring or minting an epic of its own.
+	// An add WITHOUT an epic lands in the project's root epic — the FIRST of the TODO_EPICS list
+	// install writes into the server's environment — rather than erroring, minting an epic of its
+	// own, or picking any other entry of the list.
 	res, err = session.CallTool(ctx, &mcp.CallToolParams{
 		Name: "todo_add", Arguments: map[string]any{"text": "epicless add"},
 	})
@@ -100,7 +101,7 @@ func TestMCPServerAnswersOverStdio(t *testing.T) {
 	added.Task = nil
 	mustDecode(t, res, &added)
 	if added.Task == nil || added.Task.Epic != "rooted" {
-		t.Fatalf("an epicless add must land in TODO_EPIC, got %+v", added.Task)
+		t.Fatalf("an epicless add must land in the first of TODO_EPICS, got %+v", added.Task)
 	}
 
 	// The wiki write path end to end: create a page, edit ONE field, and check the others rode

@@ -1,6 +1,18 @@
 package main
 
-import "strings"
+import (
+	"os"
+	"strings"
+)
+
+// rootEpic is the first entry of $TODO_EPICS — the comma-separated list of this project's epics
+// that install writes into the server's environment. An add that names no epic lands there.
+func rootEpic() string {
+	if xs := splitComma(os.Getenv("TODO_EPICS")); len(xs) > 0 {
+		return xs[0]
+	}
+	return ""
+}
 
 func splitComma(s string) []string {
 	var out []string

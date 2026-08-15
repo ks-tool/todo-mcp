@@ -133,16 +133,16 @@ Wiring it into a project is one command, run in the project's directory:
 ```
 todo install                       # default database (the XDG one; projects are epics)
 todo install --db ./backlog.db     # or a database of this project's own
-todo install --epic myproj         # the project's root epic (default: the directory's name)
+todo install --epics myproj,api    # the project's epics; the first is the root (default: the directory's name)
 ```
 
 It writes — or merges into — the project's `.mcp.json`, the file Claude Code reads at startup,
 preserving every other server the file already names and replacing only the `todo` entry. The
 command path is this binary resolved absolute, because an MCP host does not inherit your shell's
-PATH. The root epic names which slice of the shared database is this project: it is written into
-the server's environment as `TODO_EPIC` — an add that names no epic lands there, in the CLI and
-over MCP alike — and into the `CLAUDE.md` block by name, so the assistant files work where the
-project keeps it.
+PATH. The epics name which slices of the shared database are this project: the list is written into
+the server's environment as `TODO_EPICS` (comma-separated) — an add that names no epic lands in the
+first, in the CLI and over MCP alike — and into the `CLAUDE.md` block by name, so the assistant
+files work where the project keeps it.
 
 It also maintains a short usage section in the project's `CLAUDE.md`, between markers it owns —
 created if the file is absent, replaced in place on a re-install, and never touching a byte outside
