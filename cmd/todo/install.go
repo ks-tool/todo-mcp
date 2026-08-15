@@ -120,11 +120,21 @@ The project's tasks and design docs live in one SQLite backlog served by the ` +
 outside this list are other projects. TAGS are free labels for slicing, and the ` + "`tag`" + ` filter
 takes a comma list a task must carry all of (` + "`todo_list {tag: \"ee,scheduler\"}`" + `).
 
+**No code without a task.** If a prompt asks for code and no task covers it, create one first
+(` + "`todo_add`" + `) and then follow the standard flow — do the work and close the task with the
+commit. Code that ships without a task cannot be found again through the backlog and breaks the
+task → commit → code trail.
+
 **A commit is the trigger to close tasks.** A commit closes every task whose work it finishes — one
 commit may close several. Name their ids in the message (` + "`sync_commits`" + ` then maps the commit
 to each) or ` + "`task_commit`" + ` each against the same sha, and mark each ` + "`todo_done`" + `. Do this
 as part of committing, not later — an unclosed task whose work has shipped is a lie the backlog then
 tells. Deletion is always soft (trash + restore), so nothing is lost to a wrong call.
+
+**Finding code: task → commit → code.** To find why or where something was built, read the task
+(` + "`todo_show`" + `, or ` + "`todo_list {search}`" + `) for the intent, take its commit shas
+(` + "`task_commits`" + `), and read the code at each (` + "`git show <sha>`" + `). Closing tasks by
+their commit is exactly what makes this work — the backlog is the index from intent to change.
 ` + blockEnd + "\n"
 }
 

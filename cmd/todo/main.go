@@ -38,10 +38,14 @@ func rootCmd() *cobra.Command {
 	root := &cobra.Command{
 		Use:   "todo",
 		Short: "a backlog and a wiki you can query — CLI, TUI and MCP over one database",
-		Long: `The database, for every command: --db <path>, else $TODO_DB, else ./backlog.db, else the XDG default.
+		Long: `Run with no command to open the interactive TUI (backlog + wiki, soft-delete, trash).
+The database, for every command: --db <path>, else $TODO_DB, else ./backlog.db, else the XDG default.
 Output is a table at a terminal, JSON Lines into a pipe or under --json. Exit: 0 found, 2 empty, 1 error.`,
 		SilenceUsage:  true,
 		SilenceErrors: true,
+		// No subcommand opens the TUI — the interactive face is the default one a person reaches for.
+		Args: cobra.NoArgs,
+		RunE: withStore(func(st *todo.Store, _ *cobra.Command, _ []string) error { return runTUI(st) }),
 	}
 	root.PersistentFlags().StringVar(&flagDB, "db", "", "database file (overrides $TODO_DB and discovery)")
 	root.PersistentFlags().BoolVar(&flagJSON, "json", false, "JSON Lines output even at a terminal")
@@ -443,12 +447,9 @@ func taskCommands() []*cobra.Command {
 	}
 }
 
-// frontCommands are the other faces over the same store, plus the environment plumbing.
+// frontCommands are the other faces over the same store, plus the environment plumbing. The TUI is
+// not among them: it is the root command's own default, reached by running `todo` with no subcommand.
 func frontCommands() []*cobra.Command {
-	tui := &cobra.Command{
-		Use: "tui", Short: "interactive terminal UI (backlog + wiki, soft-delete, trash)", Args: cobra.NoArgs,
-		RunE: withStore(func(st *todo.Store, _ *cobra.Command, _ []string) error { return runTUI(st) }),
-	}
 	mcp := &cobra.Command{
 		Use: "mcp", Short: "serve the backlog as MCP tools over stdio", Args: cobra.NoArgs,
 		RunE: withStore(func(st *todo.Store, _ *cobra.Command, _ []string) error { return runMCP(st) }),
@@ -530,7 +531,7 @@ The copy is then OPENED and counted, because a backup that cannot be read is not
 			return nil
 		}),
 	}
-	return []*cobra.Command{tui, mcp, install, uninstall, schema, backup}
+	return []*cobra.Command{mcp, install, uninstall, schema, backup}
 }
 
 // jsonOut is true when the caller wants machine output: --json, or any time stdout is not a tty.
@@ -659,7 +660,7 @@ func emitSchema() {
 			"edit": "<id> [--priority --epic --slug --text --dep --status]",
 			"dep":  "<id> <depends-on-id> [--del]", "suggest": "<id> [--apply]",
 			"delete": "<id> — soft-delete to trash", "restore": "<id>", "trash": "the soft-deleted",
-			"render": "[tag] — rebuild markdown to stdout", "tui": "interactive terminal UI",
+			"render": "[tag] — rebuild markdown to stdout",
 			"backup": "[dir-or-file] — verified VACUUM INTO snapshot; never overwrites",
 			"doc":    "add|show|edit|list|rm|restore|import|link-slugs — the wiki",
 			"docs":   "<task-or-doc-id> — the docs a task maps to; a doc's related pages", "tasks": "<doc-id> — the tasks a doc maps to",
