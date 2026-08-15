@@ -190,7 +190,7 @@ func runMCP(st *todo.Store) error {
 	// --- wiki + mappings ---
 
 	mcp.AddTool(s, &mcp.Tool{Name: "doc_add",
-		Description: "Create or replace a wiki page. path and body are required; title and kind (design|note|adr|reference) optional. The id is derived from the path and returned, so a later doc_link can find it."},
+		Description: "Create or replace a wiki page. path and body are required; title and kind (design|threat-model|note|adr|reference) optional. The id is derived from the path and returned, so a later doc_link can find it."},
 		func(_ context.Context, _ *mcp.CallToolRequest, in docIn) (*mcp.CallToolResult, docOut, error) {
 			if len(in.Path) == 0 || len(in.Body) == 0 {
 				return errText("path and body are required"), docOut{}, nil
@@ -203,23 +203,33 @@ func runMCP(st *todo.Store) error {
 			return textResult("saved " + d.ID), docOut{Doc: &d}, nil
 		})
 
-	mcp.AddTool(s, &mcp.Tool{Name: "doc_show", Description: "One wiki page in full, by id."},
+	mcp.AddTool(s, &mcp.Tool{Name: "doc_show", Description: "One wiki page in full, by id, with the pages related to it (linked either way) as metadata."},
 		func(_ context.Context, _ *mcp.CallToolRequest, in idIn) (*mcp.CallToolResult, docOut, error) {
 			d, ok, err := st.GetDoc(in.ID)
 			if err != nil || !ok {
 				return notFound(in.ID), docOut{}, err
 			}
-			return result(1), docOut{Doc: &d}, nil
+			rel, err := st.RelatedDocs(in.ID)
+			if err != nil {
+				return result(0), docOut{}, err
+			}
+			return result(1), docOut{Doc: &d, Related: metasOf(rel)}, nil
 		})
 
-	mcp.AddTool(s, &mcp.Tool{Name: "doc_list", Description: "Wiki pages, optionally narrowed by a full-text search over title and body. Returns metadata only — id, path, title, kind — because a list is for choosing; doc_show returns the body."},
+	mcp.AddTool(s, &mcp.Tool{Name: "doc_list", Description: "Wiki pages, narrowed by a full-text search over title and body, or by section (the path prefix before '/', e.g. 'threat-model'; its README comes first). Returns metadata only — id, path, title, kind — because a list is for choosing; doc_show returns the body."},
 		func(_ context.Context, _ *mcp.CallToolRequest, in searchIn) (*mcp.CallToolResult, docMetasOut, error) {
-			ds, err := st.ListDocs(in.Search)
+			var ds []todo.Doc
+			var err error
+			if len(in.Section) > 0 {
+				ds, err = st.SectionDocs(in.Section)
+			} else {
+				ds, err = st.ListDocs(in.Search)
+			}
 			return result(len(ds)), docMetasOut{Docs: metasOf(ds)}, err
 		})
 
 	mcp.AddTool(s, &mcp.Tool{Name: "doc_link",
-		Description: "Map a task to a doc, both ways at once (task_docs will show it from the task, doc_tasks from the doc). With del=true, unlink."},
+		Description: "Map a task to a doc, both ways at once (task_docs will show it from the task, doc_tasks from the doc). task_id may also be a DOC id, relating two pages (a chapter to its README). With del=true, unlink."},
 		func(_ context.Context, _ *mcp.CallToolRequest, in linkIn) (*mcp.CallToolResult, okOut, error) {
 			var err error
 			if in.Del {
@@ -314,7 +324,8 @@ type depIn struct {
 	Del       bool   `json:"del,omitempty"`
 }
 type searchIn struct {
-	Search string `json:"search,omitempty"`
+	Search  string `json:"search,omitempty"`
+	Section string `json:"section,omitempty"`
 }
 type taskIDIn struct {
 	TaskID string `json:"taskId"`
@@ -342,7 +353,8 @@ type syncIn struct {
 }
 
 type docOut struct {
-	Doc *todo.Doc `json:"doc,omitempty"`
+	Doc     *todo.Doc `json:"doc,omitempty"`
+	Related []docMeta `json:"related,omitempty"` // pages linked to this one, either direction
 }
 
 // docMeta is a doc without its body — what every LIST returns. A wiki page can be tens of

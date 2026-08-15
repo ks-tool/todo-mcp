@@ -678,6 +678,33 @@ func (m *tui) docDetailContent() string {
 	writeln(stTitle.Render(d.ID) + "  [" + d.Kind + "]  " + d.Path)
 	writeln("")
 	writeln(m.markdown(d.Body))
+	// The section is structure, not an edge: a README lists the pages beside it, a page points back
+	// at its README, and both come from the path alone.
+	if sec, page := todo.SplitSection(d.Path); len(sec) > 0 {
+		if pages, _ := m.store.SectionDocs(sec); len(pages) > 1 {
+			if page == "README" {
+				writeln(stSect.Render("section " + sec))
+				for _, p := range pages {
+					if p.ID == d.ID {
+						continue
+					}
+					writeln("  " + m.lnk("doc", p.ID, p.ID, line) + "  " + stDim.Render(oneLine(p.Title, 40)))
+				}
+				writeln("")
+			} else if pages[0].ID != d.ID && strings.HasSuffix(pages[0].Path, "/README") {
+				writeln(stSect.Render("section"))
+				writeln("  " + m.lnk("doc", pages[0].ID, pages[0].ID, line) + "  " + stDim.Render(oneLine(pages[0].Title, 40)))
+				writeln("")
+			}
+		}
+	}
+	if rel, _ := m.store.RelatedDocs(d.ID); len(rel) > 0 {
+		writeln(stSect.Render("docs"))
+		for _, r := range rel {
+			writeln("  " + m.lnk("doc", r.ID, r.ID, line) + "  " + stDim.Render(oneLine(r.Title, 40)))
+		}
+		writeln("")
+	}
 	if tasks, _ := m.store.TasksOf(d.ID); len(tasks) > 0 {
 		writeln(stSect.Render("tasks"))
 		for _, t := range tasks {

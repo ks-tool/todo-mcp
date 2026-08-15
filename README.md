@@ -80,6 +80,14 @@ todo render ee > tasks.ee.md                # write one tag's slice back out, no
 `todo render` is the inverse of `todo import`, and the two round-trip: importing what render wrote
 gives the same tasks, so the database is a safe source of truth rather than a lossy cache.
 
+A doc's path may carry one level of hierarchy: `threat-model/02-node` is a page in the
+`threat-model` section, `threat-model/README` is that section's index, and the pages beside it stay
+flat — a section groups the pages that together describe one thing, it does not nest. `todo doc
+list --section threat-model` lists a section README-first, and in the TUI a README lists its pages
+while every page links back to its README. Docs also relate across sections: `todo link <doc-id>
+doc <doc-id>` records an edge between two pages, and `todo docs <doc-id>` answers with a page's
+neighbourhood, linked either way.
+
 `todo backup [dir-or-file]` snapshots the database with SQLite's `VACUUM INTO` — transactionally
 consistent even while the database is in use — then opens the copy and counts its rows against the
 original before calling it a backup. A directory (default: the database's own) gets a timestamped

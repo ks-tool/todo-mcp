@@ -36,25 +36,28 @@ type Task struct {
 	DeletedAt string   `json:"deletedAt,omitempty"` // RFC3339 when soft-deleted; empty means live
 }
 
-// Doc is a wiki page: a title, a stable path, a kind, and a markdown body. Tasks map onto docs
-// through Links, both ways — a task's docs and a doc's tasks are the same edges read from two ends.
+// Doc is a wiki page: a title, a stable path, a kind, and a markdown body. The path may carry ONE
+// level of hierarchy — "<section>/<page>", e.g. threat-model/02-node — where "<section>/README" is
+// the section's index and the pages beside it stay flat: a section groups pages that together
+// describe one thing, it does not nest. Tasks map onto docs through Links, both ways — a task's
+// docs and a doc's tasks are the same edges read from two ends.
 type Doc struct {
 	ID        string `json:"id"`   // stable handle, e.g. doc-runtime-storage-scheduler
-	Path      string `json:"path"` // the slug a task's Slug field can match, e.g. runtime-storage-scheduler
+	Path      string `json:"path"` // the slug a task's Slug field can match; optionally "<section>/<page>"
 	Title     string `json:"title"`
-	Kind      string `json:"kind"` // design | note | adr | reference
+	Kind      string `json:"kind"` // design | threat-model | note | adr | reference
 	Body      string `json:"body"`
 	DeletedAt string `json:"deletedAt,omitempty"`
 }
 
-// Link is an edge FROM a task to something else: a doc, a commit, or a URL. One table carries all
-// three because the questions are the same shape — "what does this task point at" and, for docs,
-// "what points at this doc" — and a kind keeps them apart. Commits land here rather than in a field
-// because a task accretes many of them over its life.
+// Link is an edge FROM a task or a doc to something else: a doc, a commit, or a URL. One table
+// carries all of it because the questions are the same shape — "what does this point at" and, for
+// docs, "what points at this doc" — and a kind keeps them apart. Commits land here rather than in a
+// field because a task accretes many of them over its life.
 type Link struct {
-	TaskID string `json:"taskId"`
-	Kind   string `json:"kind"` // doc | commit | url
-	Ref    string `json:"ref"`  // doc id | commit sha | url
+	TaskID string `json:"taskId"` // the source: a task id, or a doc id for doc↔doc relations
+	Kind   string `json:"kind"`   // doc | commit | url
+	Ref    string `json:"ref"`    // doc id | commit sha | url
 	Note   string `json:"note,omitempty"`
 }
 

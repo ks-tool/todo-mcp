@@ -111,10 +111,10 @@ func (m *tui) openDocForm(d *todo.Doc) tea.Cmd {
 	path, title, kind, body := cur.Path, cur.Title, cur.Kind, cur.Body
 
 	f := huh.NewForm(huh.NewGroup(
-		huh.NewInput().Title("path (the slug tasks match)").Value(&path),
+		huh.NewInput().Title("path (the slug tasks match; section/page groups)").Value(&path),
 		huh.NewInput().Title("title").Value(&title),
 		huh.NewSelect[string]().Title("kind").
-			Options(huh.NewOptions("note", "design", "adr", "reference")...).Value(&kind),
+			Options(huh.NewOptions("note", "design", "threat-model", "adr", "reference")...).Value(&kind),
 		huh.NewText().Title("body (markdown)").Value(&body).Lines(12),
 	))
 	return m.openForm(f, func() {

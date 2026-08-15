@@ -46,7 +46,7 @@ func wikiCommands() []*cobra.Command {
 	}
 	docAdd.Flags().String("path", "", "the slug a task's slug field matches (required)")
 	docAdd.Flags().String("title", "", "page title (default: the path)")
-	docAdd.Flags().String("kind", "note", "design|note|adr|reference")
+	docAdd.Flags().String("kind", "note", "design|threat-model|note|adr|reference")
 	docAdd.Flags().String("body", "", "markdown body (or pass it as trailing words)")
 	docAdd.Flags().String("id", "", "explicit id (default: derived from the path)")
 
@@ -102,9 +102,15 @@ func wikiCommands() []*cobra.Command {
 	}
 
 	docList := &cobra.Command{
-		Use: "list", Short: "pages, optionally under a full-text search", Args: cobra.NoArgs,
+		Use: "list", Short: "pages, under a full-text search or one section", Args: cobra.NoArgs,
 		RunE: withStore(func(st *todo.Store, cmd *cobra.Command, _ []string) error {
-			ds, err := st.ListDocs(mustFlag(cmd, "search"))
+			var ds []todo.Doc
+			var err error
+			if sec := mustFlag(cmd, "section"); len(sec) > 0 {
+				ds, err = st.SectionDocs(sec)
+			} else {
+				ds, err = st.ListDocs(mustFlag(cmd, "search"))
+			}
 			if err != nil {
 				return err
 			}
@@ -113,6 +119,7 @@ func wikiCommands() []*cobra.Command {
 		}),
 	}
 	docList.Flags().String("search", "", "full-text over title and body")
+	docList.Flags().String("section", "", "one section's pages (the path prefix), README first")
 
 	docRm := &cobra.Command{
 		Use: "rm <id>", Short: "soft-delete a page", Args: cobra.ExactArgs(1),
@@ -176,8 +183,18 @@ func wikiCommands() []*cobra.Command {
 	doc.AddCommand(docAdd, docShow, docEdit, docList, docRm, docRestore, docImport, docLinkSlugs)
 
 	docs := &cobra.Command{
-		Use: "docs <task-id>", Short: "the docs a task maps to (task -> doc)", Args: cobra.ExactArgs(1),
+		Use: "docs <task-or-doc-id>", Short: "the docs a task maps to; for a doc id, its related pages", Args: cobra.ExactArgs(1),
 		RunE: withStore(func(st *todo.Store, _ *cobra.Command, args []string) error {
+			// A doc id answers with its neighbourhood — linked either way — because that is the
+			// question a doc id asks; a task's edges only ever point outward.
+			if _, ok, _ := st.GetDoc(args[0]); ok {
+				ds, err := st.RelatedDocs(args[0])
+				if err != nil {
+					return err
+				}
+				emitDocs(ds)
+				return nil
+			}
 			ds, err := st.DocsOf(args[0])
 			if err != nil {
 				return err
@@ -200,7 +217,7 @@ func wikiCommands() []*cobra.Command {
 	}
 
 	link := &cobra.Command{
-		Use: "link <task-id> <doc|commit|url> <ref>", Short: "map a task to a thing (--del unlinks)", Args: cobra.ExactArgs(3),
+		Use: "link <task-or-doc-id> <doc|commit|url> <ref>", Short: "map a task — or a doc — to a thing (--del unlinks)", Args: cobra.ExactArgs(3),
 		RunE: withStore(func(st *todo.Store, cmd *cobra.Command, args []string) error {
 			if mustBool(cmd, "del") {
 				return st.Unlink(args[0], args[1], args[2])

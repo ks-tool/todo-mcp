@@ -39,6 +39,21 @@ func (s *Store) DocByPath(path string) (Doc, bool, error) {
 	return ds[0], true, nil
 }
 
+// DocBySlug resolves the doc a task's slug names: the exact path, or — because moving a page into
+// a section prefixes its path without renaming the page — the single page called <slug> inside any
+// section. Two sections holding the same page name make the slug ambiguous, and an ambiguous slug
+// matches nothing rather than guessing.
+func (s *Store) DocBySlug(slug string) (Doc, bool, error) {
+	if d, ok, err := s.DocByPath(slug); ok || err != nil {
+		return d, ok, err
+	}
+	ds, err := s.scanDocs(`WHERE deleted_at = '' AND path LIKE '%/' || ?`, slug)
+	if err != nil || len(ds) != 1 {
+		return Doc{}, false, err
+	}
+	return ds[0], true, nil
+}
+
 // ListDocs returns live docs, optionally narrowed by a full-text search over title and body.
 func (s *Store) ListDocs(search string) ([]Doc, error) {
 	if len(search) > 0 {
@@ -57,13 +72,17 @@ func (s *Store) RestoreDoc(id string) (bool, error) {
 	return affected(res, err)
 }
 
-// Link adds an edge from a task to a doc, commit or url. Idempotent: the same edge twice is one.
-func (s *Store) Link(taskID, kind, ref, note string) error {
-	if _, ok, err := s.Get(taskID); err != nil || !ok {
-		return fmt.Errorf("no such task: %s", taskID)
+// Link adds an edge from a task — or from a doc — to a doc, commit or url. A doc source is what
+// relates pages to each other: a chapter to its README, a design to the threat model it answers.
+// Idempotent: the same edge twice is one.
+func (s *Store) Link(fromID, kind, ref, note string) error {
+	if _, ok, err := s.Get(fromID); err != nil || !ok {
+		if _, ok, err := s.GetDoc(fromID); err != nil || !ok {
+			return fmt.Errorf("no such task or doc: %s", fromID)
+		}
 	}
 	_, err := s.db.Exec(`INSERT INTO links (task_id, kind, ref, note) VALUES (?,?,?,?)
-ON CONFLICT(task_id, kind, ref) DO UPDATE SET note=excluded.note`, taskID, kind, ref, note)
+ON CONFLICT(task_id, kind, ref) DO UPDATE SET note=excluded.note`, fromID, kind, ref, note)
 	return err
 }
 
@@ -103,9 +122,35 @@ func (s *Store) DocsOf(taskID string) ([]Doc, error) {
 	return s.scanDocs(`WHERE deleted_at = '' AND id IN (SELECT ref FROM links WHERE task_id = ? AND kind = 'doc') ORDER BY path`, taskID)
 }
 
-// TasksOf is the other direction: the live tasks linked to a doc. Same edges, read from the doc end.
+// TasksOf is the other direction: the live tasks linked to a doc. Same edges, read from the doc
+// end; a doc-sourced edge simply never matches a task, so the two kinds of source need no flag.
 func (s *Store) TasksOf(docID string) ([]Task, error) {
 	return s.query(`t.id IN (SELECT task_id FROM links WHERE kind = 'doc' AND ref = ?)`, docID)
+}
+
+// SplitSection reads the one-level hierarchy out of a path: "threat-model/02-node" is page
+// "02-node" in section "threat-model"; a bare path is a page in no section.
+func SplitSection(path string) (section, page string) {
+	if i := strings.IndexByte(path, '/'); i >= 0 {
+		return path[:i], path[i+1:]
+	}
+	return "", path
+}
+
+// SectionDocs is one section's pages, the README first — the index reads before its chapters, even
+// though a plain path sort would file it after the numbered ones.
+func (s *Store) SectionDocs(section string) ([]Doc, error) {
+	return s.scanDocs(`WHERE deleted_at = '' AND path LIKE ? || '/%'
+	    ORDER BY (path = ? || '/README') DESC, path`, section, section)
+}
+
+// RelatedDocs is a doc's neighbourhood among docs: the pages it links to and the pages linking to
+// it, one list — a reader following a relation does not care which end holds the edge. Section
+// membership is NOT an edge: it lives in the path, and SectionDocs answers it.
+func (s *Store) RelatedDocs(id string) ([]Doc, error) {
+	return s.scanDocs(`WHERE deleted_at = '' AND id != ? AND (
+	       id IN (SELECT ref FROM links WHERE task_id = ? AND kind = 'doc')
+	    OR id IN (SELECT task_id FROM links WHERE kind = 'doc' AND ref = ?)) ORDER BY path`, id, id, id)
 }
 
 // CommitsOf is a task's commit edges, ready for a "history" view. Ref is the sha, Note the subject.
@@ -122,7 +167,7 @@ func (s *Store) LinkDocsBySlug() (int, error) {
 	n := 0
 	for _, t := range tasks {
 		for _, slug := range splitList(t.Slug) {
-			d, ok, err := s.DocByPath(slug)
+			d, ok, err := s.DocBySlug(slug)
 			if err != nil {
 				return n, err
 			}

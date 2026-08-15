@@ -661,7 +661,7 @@ func emitSchema() {
 			"render": "[tag] — rebuild markdown to stdout", "tui": "interactive terminal UI",
 			"backup": "[dir-or-file] — verified VACUUM INTO snapshot; never overwrites",
 			"doc":    "add|show|edit|list|rm|restore|import|link-slugs — the wiki",
-			"docs":   "<task-id> — the docs a task maps to", "tasks": "<doc-id> — the tasks a doc maps to",
+			"docs":   "<task-or-doc-id> — the docs a task maps to; a doc's related pages", "tasks": "<doc-id> — the tasks a doc maps to",
 			"commit": "<task> <sha> — record a commit", "commits": "<task>",
 			"sync-commits": "[--dir --rev] — scan git log for task ids",
 		},

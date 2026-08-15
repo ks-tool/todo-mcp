@@ -30,6 +30,96 @@ func TestTwoWayDocMapping(t *testing.T) {
 	}
 }
 
+// TestDocToDocRelations pins the doc-sourced edge: a chapter links to its README, both ends see the
+// relation through RelatedDocs, the doc-sourced edge never leaks into TasksOf, and an id that is
+// neither a task nor a doc is refused.
+func TestDocToDocRelations(t *testing.T) {
+	st := openTemp(t)
+	for _, d := range []Doc{
+		{ID: "doc-readme", Path: "readme", Title: "Threat models", Kind: "threat-model", Body: "index"},
+		{ID: "doc-01-boundaries", Path: "01-boundaries", Title: "The map", Kind: "threat-model", Body: "x"},
+		{ID: "doc-02-node", Path: "02-node", Title: "The node", Kind: "threat-model", Body: "y"},
+	} {
+		if err := st.PutDoc(d); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	if err := st.Link("doc-01-boundaries", LinkDoc, "doc-readme", ""); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.Link("doc-02-node", LinkDoc, "doc-readme", ""); err != nil {
+		t.Fatal(err)
+	}
+
+	// The chapter sees its README; the README sees every chapter — same edges, both ends.
+	rel, _ := st.RelatedDocs("doc-01-boundaries")
+	if len(rel) != 1 || rel[0].ID != "doc-readme" {
+		t.Fatalf("chapter's related docs: want the readme, got %v", rel)
+	}
+	rel, _ = st.RelatedDocs("doc-readme")
+	if len(rel) != 2 {
+		t.Fatalf("readme's related docs: want both chapters, got %v", rel)
+	}
+
+	// A doc-sourced edge is not a task and must not surface as one.
+	if ts, _ := st.TasksOf("doc-readme"); len(ts) != 0 {
+		t.Fatalf("a doc-sourced edge leaked into TasksOf: %v", ids(ts))
+	}
+
+	if err := st.Link("neither-task-nor-doc", LinkDoc, "doc-readme", ""); err == nil {
+		t.Fatal("a source that exists nowhere must be refused")
+	}
+}
+
+// TestSections pins the one-level hierarchy: a section is a path prefix, SectionDocs returns its
+// pages with the README first (a plain path sort would file it after the numbered chapters), a page
+// outside the section stays outside, and SplitSection reads both shapes of path.
+func TestSections(t *testing.T) {
+	st := openTemp(t)
+	for _, d := range []Doc{
+		{ID: "doc-tm-readme", Path: "threat-model/README", Title: "Threat models", Kind: "threat-model", Body: "i"},
+		{ID: "doc-tm-02", Path: "threat-model/02-node", Title: "The node", Kind: "threat-model", Body: "n"},
+		{ID: "doc-tm-01", Path: "threat-model/01-map", Title: "The map", Kind: "threat-model", Body: "m"},
+		{ID: "doc-loose", Path: "loose", Title: "Loose", Kind: "note", Body: "l"},
+	} {
+		if err := st.PutDoc(d); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	ds, err := st.SectionDocs("threat-model")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(ds) != 3 || ds[0].Path != "threat-model/README" || ds[1].Path != "threat-model/01-map" {
+		t.Fatalf("want README first then the chapters, got %v", ds)
+	}
+
+	if sec, page := SplitSection("threat-model/02-node"); sec != "threat-model" || page != "02-node" {
+		t.Fatalf("SplitSection sectioned path: got %q %q", sec, page)
+	}
+	if sec, page := SplitSection("loose"); len(sec) != 0 || page != "loose" {
+		t.Fatalf("SplitSection bare path: got %q %q", sec, page)
+	}
+
+	// A slug keeps finding its page after the page moves into a section: the prefix groups, it does
+	// not rename. The bare-path doc is still found exactly.
+	if d, ok, _ := st.DocBySlug("02-node"); !ok || d.ID != "doc-tm-02" {
+		t.Fatalf("a sectioned page must resolve by its page name, got %v %v", d, ok)
+	}
+	if d, ok, _ := st.DocBySlug("loose"); !ok || d.ID != "doc-loose" {
+		t.Fatalf("a bare path must resolve exactly, got %v %v", d, ok)
+	}
+	// The same page name in a second section makes the slug ambiguous — no match, no guessing.
+	if err := st.PutDoc(Doc{ID: "doc-other-02", Path: "other/02-node", Title: "x", Kind: "note", Body: "y"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok, _ := st.DocBySlug("02-node"); ok {
+		t.Fatal("an ambiguous slug must match nothing")
+	}
+}
+
 func TestLinkDocsBySlugBridgesTheBacklog(t *testing.T) {
 	st := openTemp(t)
 	_ = st.Put(Task{ID: "ee-sched-01", Epic: "Scheduler", Text: "a", Slug: "scheduler-design"})
