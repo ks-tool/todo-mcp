@@ -239,9 +239,9 @@ func taskCommands() []*cobra.Command {
 			if len(text) == 0 {
 				text = strings.Join(args, " ")
 			}
-			epic := mustFlag(cmd, "epic")
+			epic := firstNonEmpty(mustFlag(cmd, "epic"), os.Getenv("TODO_EPIC"))
 			if len(strings.TrimSpace(epic)) == 0 || len(strings.TrimSpace(text)) == 0 {
-				return fmt.Errorf("add needs --epic and the text (as --text or trailing words)")
+				return fmt.Errorf("add needs an epic (--epic, or the TODO_EPIC install writes) and the text")
 			}
 			id, err := st.NextID(epic)
 			if err != nil {
@@ -455,19 +455,32 @@ func frontCommands() []*cobra.Command {
 	}
 	install := &cobra.Command{
 		Use: "install", Short: "wire the MCP server into the project's .mcp.json and CLAUDE.md", Args: cobra.NoArgs,
+		// The epic names which slice of the shared database IS this project; unnamed, it defaults
+		// to the project directory's own name, which is what a person would have typed.
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			return runInstall(mustFlag(cmd, "dir"), flagDB, mustBool(cmd, "no-claude-md"))
+			dir := mustFlag(cmd, "dir")
+			epic := mustFlag(cmd, "epic")
+			if len(epic) == 0 {
+				abs, err := filepath.Abs(dir)
+				if err != nil {
+					return err
+				}
+				epic = filepath.Base(abs)
+			}
+			return runInstall(dir, flagDB, epic, mustFlag(cmd, "instructions"))
 		},
 	}
 	install.Flags().String("dir", ".", "project directory")
-	install.Flags().Bool("no-claude-md", false, "skip the CLAUDE.md usage block")
+	install.Flags().String("epic", "", "the project's root epic (default: the directory's name)")
+	install.Flags().String("instructions", instructionsDefault, "file for the agent usage block (e.g. AGENTS.md); 'none' writes no block")
 	uninstall := &cobra.Command{
-		Use: "uninstall", Short: "remove the todo entry and the CLAUDE.md block", Args: cobra.NoArgs,
+		Use: "uninstall", Short: "remove the todo entry and the instructions block", Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			return runUninstall(mustFlag(cmd, "dir"))
+			return runUninstall(mustFlag(cmd, "dir"), mustFlag(cmd, "instructions"))
 		},
 	}
 	uninstall.Flags().String("dir", ".", "project directory")
+	uninstall.Flags().String("instructions", instructionsDefault, "file the usage block was installed into")
 	schema := &cobra.Command{
 		Use: "schema", Short: "the field and command contract, as JSON", Args: cobra.NoArgs,
 		Run: func(_ *cobra.Command, _ []string) { emitSchema() },
@@ -641,7 +654,7 @@ func emitSchema() {
 			"ready": "open tasks with all deps done", "next": "the top ready task",
 			"show": "<id> — one task", "impact": "<id> — tasks depending on it",
 			"stats": "counts per epic", "done": "<id>", "reopen": "<id>",
-			"add":  "--epic <e> [--tags --priority --slug --touch --dep] <text>",
+			"add":  "[--epic <e>] [--tags --priority --slug --touch --dep] <text> — epic defaults to $TODO_EPIC",
 			"edit": "<id> [--priority --epic --slug --text --dep --status]",
 			"dep":  "<id> <depends-on-id> [--del]", "suggest": "<id> [--apply]",
 			"delete": "<id> — soft-delete to trash", "restore": "<id>", "trash": "the soft-deleted",

@@ -38,7 +38,7 @@ func TestMCPServerAnswersOverStdio(t *testing.T) {
 	defer cancel()
 
 	cmd := exec.Command(bin, "mcp")
-	cmd.Env = append(os.Environ(), "TODO_DB="+db)
+	cmd.Env = append(os.Environ(), "TODO_DB="+db, "TODO_EPIC=rooted")
 	client := mcp.NewClient(&mcp.Implementation{Name: "test", Version: "0"}, nil)
 	session, err := client.Connect(ctx, &mcp.CommandTransport{Command: cmd}, nil)
 	if err != nil {
@@ -88,13 +88,28 @@ func TestMCPServerAnswersOverStdio(t *testing.T) {
 	if added.Task.Rank != 3 {
 		t.Fatalf("todo_add returned the pre-write struct: priority P3 must come back with rank 3, got %d", added.Task.Rank)
 	}
+
+	// An add WITHOUT an epic lands in the project's root epic — the TODO_EPIC that install writes
+	// into the server's environment — rather than erroring or minting an epic of its own.
+	res, err = session.CallTool(ctx, &mcp.CallToolParams{
+		Name: "todo_add", Arguments: map[string]any{"text": "epicless add"},
+	})
+	if err != nil {
+		t.Fatal("call todo_add without epic:", err)
+	}
+	added.Task = nil
+	mustDecode(t, res, &added)
+	if added.Task == nil || added.Task.Epic != "rooted" {
+		t.Fatalf("an epicless add must land in TODO_EPIC, got %+v", added.Task)
+	}
 }
 
 // mustDecode reads the structured content of a tool result into v.
 func mustDecode(t *testing.T, res *mcp.CallToolResult, v any) {
 	t.Helper()
 	if res.IsError {
-		t.Fatalf("tool returned an error: %v", res.Content)
+		msg, _ := json.Marshal(res.Content)
+		t.Fatalf("tool returned an error: %s", msg)
 	}
 	b, err := json.Marshal(res.StructuredContent)
 	if err != nil {

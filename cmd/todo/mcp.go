@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"os"
 	"time"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -103,10 +104,13 @@ func runMCP(st *todo.Store) error {
 	// --- writes ---
 
 	mcp.AddTool(s, &mcp.Tool{Name: "todo_add",
-		Description: "Create a task. epic and text are required; tags, priority, slug, dep, touchpoints optional. The id is minted and returned."},
+		Description: "Create a task. text is required; epic defaults to the project's root epic (the TODO_EPIC install wrote); tags, priority, slug, dep, touchpoints optional. The id is minted and returned."},
 		func(_ context.Context, _ *mcp.CallToolRequest, in addIn) (*mcp.CallToolResult, taskOut, error) {
+			if len(in.Epic) == 0 {
+				in.Epic = os.Getenv("TODO_EPIC")
+			}
 			if len(in.Epic) == 0 || len(in.Text) == 0 {
-				return errText("epic and text are required"), taskOut{}, nil
+				return errText("text is required, and an epic — none given and no TODO_EPIC is set"), taskOut{}, nil
 			}
 			id, err := st.NextID(in.Epic)
 			if err != nil {
@@ -284,8 +288,10 @@ type suggestIn struct {
 	Apply bool   `json:"apply,omitempty"`
 }
 type addIn struct {
-	Tags     []string `json:"tags,omitempty"`
-	Epic     string   `json:"epic"`
+	Tags []string `json:"tags,omitempty"`
+	// omitempty is load-bearing: without it the SDK derives a schema with epic REQUIRED and rejects
+	// an epicless call before the handler can apply the TODO_EPIC default.
+	Epic     string   `json:"epic,omitempty"`
 	Priority string   `json:"priority,omitempty"`
 	Slug     string   `json:"slug,omitempty"`
 	Dep      string   `json:"dep,omitempty"`

@@ -16,8 +16,11 @@ import (
 // The command path is this very binary, resolved absolute: an MCP host does not inherit the
 // caller's PATH, and "todo" bare would work in one shell and fail in the host. The database is the
 // XDG default unless --db points somewhere; one database with projects as epics is the intended
-// shape, so a per-project file is the exception and asking for it is explicit.
-func runInstall(dir, db string, noClaudeMD bool) error {
+// shape, so a per-project file is the exception and asking for it is explicit. The epic is that
+// shape made concrete: install records which epic IS this project — in the server's environment as
+// TODO_EPIC, where an add without an epic lands, and by name in the CLAUDE.md block, so an agent
+// files work where the project keeps it instead of minting an epic per conversation.
+func runInstall(dir, db, epic, instructions string) error {
 	self, err := os.Executable()
 	if err != nil {
 		return fmt.Errorf("resolve this binary: %w", err)
@@ -26,14 +29,15 @@ func runInstall(dir, db string, noClaudeMD bool) error {
 		return err
 	}
 
-	entry := map[string]any{"command": self, "args": []string{"mcp"}}
+	env := map[string]string{"TODO_EPIC": epic}
 	if len(db) > 0 {
 		abs, err := filepath.Abs(db)
 		if err != nil {
 			return err
 		}
-		entry["env"] = map[string]string{"TODO_DB": abs}
+		env["TODO_DB"] = abs
 	}
+	entry := map[string]any{"command": self, "args": []string{"mcp"}, "env": env}
 
 	path := filepath.Join(dir, ".mcp.json")
 	cfg, err := readMCPConfig(path)
@@ -44,11 +48,11 @@ func runInstall(dir, db string, noClaudeMD bool) error {
 	if err := writeMCPConfig(path, cfg); err != nil {
 		return err
 	}
-	fmt.Fprintf(os.Stderr, "wired the todo MCP server into %s\n", path)
+	fmt.Fprintf(os.Stderr, "wired the todo MCP server into %s (root epic: %s)\n", path, epic)
 
-	if !noClaudeMD {
-		md := filepath.Join(dir, "CLAUDE.md")
-		if err := upsertBlock(md, claudeBlock); err != nil {
+	if instructions != instructionsNone {
+		md := filepath.Join(dir, instructions)
+		if err := upsertBlock(md, claudeBlock(epic)); err != nil {
 			return err
 		}
 		fmt.Fprintf(os.Stderr, "kept the usage block in %s current\n", md)
@@ -57,10 +61,19 @@ func runInstall(dir, db string, noClaudeMD bool) error {
 	return nil
 }
 
+// The instructions destination: any file name relative to the project directory, with a default
+// and one reserved word to opt out. A FILE parameter instead of a skip-flag, because the real
+// choice is where the agent reads its instructions — CLAUDE.md for Claude Code, AGENTS.md for the
+// hosts that settled on that name — and "do not write one" is just one more value of it.
+const (
+	instructionsDefault = "CLAUDE.md"
+	instructionsNone    = "none"
+)
+
 // runUninstall removes the todo entry and leaves everything else exactly as it was. The file stays
 // even when it ends up empty — it is the user's file, and an empty server list is a fact worth
 // keeping distinct from "never configured".
-func runUninstall(dir string) error {
+func runUninstall(dir, instructions string) error {
 	path := filepath.Join(dir, ".mcp.json")
 	cfg, err := readMCPConfig(path)
 	if err != nil {
@@ -75,29 +88,36 @@ func runUninstall(dir string) error {
 		}
 		fmt.Fprintf(os.Stderr, "removed the todo entry from %s\n", path)
 	}
-	return removeBlock(filepath.Join(dir, "CLAUDE.md"))
+	if instructions == instructionsNone {
+		return nil
+	}
+	return removeBlock(filepath.Join(dir, instructions))
 }
 
 // The agent-facing instructions install maintains in CLAUDE.md, between markers it owns. The MCP
 // tools already self-describe over the protocol, so this stays short: what lives here, which way to
-// reach it, and the one convention (a project is an epic) the schema cannot say.
+// reach it, and the two conventions the schema cannot say — this project's epic by name, and what
+// tags are for.
 const (
 	blockBegin = "<!-- todo-mcp:begin -->"
 	blockEnd   = "<!-- todo-mcp:end -->"
+)
 
-	claudeBlock = blockBegin + `
+func claudeBlock(epic string) string {
+	return blockBegin + `
 ## backlog + wiki — the todo tool
 
 The project's tasks and design docs live in one SQLite backlog served by the ` + "`todo`" + ` MCP server
 (wired in ` + "`.mcp.json`" + `). Prefer the MCP tools (` + "`todo_list`, `todo_ready`, `doc_list`, `doc_show`" + `,
 ...) — they return structured data; the ` + "`todo`" + ` CLI answers the same questions in a shell
-(` + "`todo ready`, `todo doc list --search <q>`, `todo docs <task-id>`" + `). A project is an EPIC, not a
-separate database; TAGS are free labels for slicing, and the ` + "`tag`" + ` filter takes a comma list a
-task must carry all of (` + "`todo_list {tag: \"ee,scheduler\"}`" + `). Record finished work with
-` + "`todo_done`" + ` and map commits with ` + "`sync_commits`" + `; deletion is always soft (trash + restore),
-so nothing is lost to a wrong call.
+(` + "`todo ready`, `todo doc list --search <q>`, `todo docs <task-id>`" + `). This project's tasks live
+under the ` + "`" + epic + "`" + ` epic — an add without an epic lands there, and other epics in the same
+database are other projects. TAGS are free labels for slicing, and the ` + "`tag`" + ` filter takes a
+comma list a task must carry all of (` + "`todo_list {tag: \"ee,scheduler\"}`" + `). Record finished work
+with ` + "`todo_done`" + ` and map commits with ` + "`sync_commits`" + `; deletion is always soft (trash +
+restore), so nothing is lost to a wrong call.
 ` + blockEnd + "\n"
-)
+}
 
 // upsertBlock keeps exactly one copy of the block in the file: replaces it between the markers when
 // they are present, appends it otherwise, creates the file when there is none. Everything outside

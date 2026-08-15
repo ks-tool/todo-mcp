@@ -80,24 +80,27 @@ func TestInstallMergesAndPreservesNeighbours(t *testing.T) {
 }
 
 // TestClaudeBlockIsOwnedBetweenMarkers pins the contract of the CLAUDE.md half of install: exactly
-// one copy of the block, replaced in place on a second install, everything outside the markers
-// carried byte for byte, and removal taking only the block.
+// one copy of the block, replaced in place on a second install — a renamed root epic included —
+// everything outside the markers carried byte for byte, and removal taking only the block.
 func TestClaudeBlockIsOwnedBetweenMarkers(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "CLAUDE.md")
 
-	// No file: created holding just the block.
-	if err := upsertBlock(path, claudeBlock); err != nil {
+	// No file: created holding just the block, naming the project's epic.
+	if err := upsertBlock(path, claudeBlock("myproj")); err != nil {
 		t.Fatal(err)
 	}
 	// A user writes around it.
 	b, _ := os.ReadFile(path)
+	if !strings.Contains(string(b), "`myproj` epic") {
+		t.Fatalf("the block does not name the root epic:\n%s", b)
+	}
 	content := "# my own header\n\n" + string(b) + "\nmy own footer\n"
 	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
 		t.Fatal(err)
 	}
 
-	// A second install replaces between the markers and keeps the user's text.
-	if err := upsertBlock(path, claudeBlock); err != nil {
+	// A second install replaces between the markers — the epic with it — and keeps the user's text.
+	if err := upsertBlock(path, claudeBlock("renamed")); err != nil {
 		t.Fatal(err)
 	}
 	b, _ = os.ReadFile(path)
@@ -107,6 +110,9 @@ func TestClaudeBlockIsOwnedBetweenMarkers(t *testing.T) {
 	}
 	if !strings.Contains(s, "# my own header") || !strings.Contains(s, "my own footer") {
 		t.Error("re-install disturbed the user's own text")
+	}
+	if strings.Contains(s, "myproj") || !strings.Contains(s, "`renamed` epic") {
+		t.Error("re-install must replace the epic name, not keep the old block")
 	}
 
 	// Removal takes the block and nothing else.
@@ -126,7 +132,7 @@ func TestClaudeBlockIsOwnedBetweenMarkers(t *testing.T) {
 	if err := os.WriteFile(path, []byte("x\n"+blockBegin+"\norphan\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if err := upsertBlock(path, claudeBlock); err == nil {
+	if err := upsertBlock(path, claudeBlock("myproj")); err == nil {
 		t.Error("an orphaned begin marker must refuse the upsert")
 	}
 }

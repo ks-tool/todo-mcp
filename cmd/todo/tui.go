@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"sort"
 	"strings"
 	"time"
 
@@ -27,6 +28,7 @@ import (
 //
 // Keys — list: ↑/↓ move · Enter/e edit · a add · d delete · v full-screen view · / search ·
 // f cycle the tag filter · s cycle status · t trash · c commit · l link a doc · w wiki ·
+// 1–4 sort by that column (the same digit flips the direction, 0 restores the store's order) ·
 // Tab focus the detail · q quit. Detail: ↑/↓ scroll · n/p walk links · Enter follow · Tab/Esc
 // back. In the trash: r restore.
 func runTUI(st *todo.Store) error {
@@ -68,6 +70,8 @@ type tui struct {
 	statusF todo.Status
 	search  string
 	trash   bool
+	sortCol int  // column the list is ordered by; -1 = the store's own order
+	sortAsc bool // direction of that order
 
 	table    table.Model
 	detail   viewport.Model
@@ -95,7 +99,7 @@ const (
 func newTUI(st *todo.Store) *tui {
 	ti := textinput.New()
 	ti.Placeholder = "full-text query; Enter applies, Esc clears"
-	return &tui{store: st, statusF: todo.StatusOpen, linkSel: -1, searchIn: ti}
+	return &tui{store: st, statusF: todo.StatusOpen, linkSel: -1, sortCol: -1, searchIn: ti}
 }
 
 func (m *tui) Init() tea.Cmd { return nil }
@@ -110,15 +114,16 @@ func (m *tui) reload() {
 			return
 		}
 		m.docs = ds
-		rows := make([]table.Row, len(ds))
-		for i, d := range ds {
+		m.sortDocs()
+		rows := make([]table.Row, len(m.docs))
+		for i, d := range m.docs {
 			rows[i] = table.Row{d.ID, d.Kind, d.Path}
 		}
 		// Rows out first: bubbles renders a row by indexing the COLUMNS with the row's own cell
 		// count, so swapping to 3 doc columns while 4-cell task rows are still in the table panics
 		// inside SetColumns. An empty table renders nothing and is safe to reshape.
 		m.table.SetRows(nil)
-		m.table.SetColumns(docColumns(m.listWidth()))
+		m.table.SetColumns(m.sortMark(docColumns(m.listWidth())))
 		m.table.SetRows(rows)
 	} else {
 		var err error
@@ -131,14 +136,19 @@ func (m *tui) reload() {
 			m.flash = err.Error()
 			return
 		}
+		m.sortTasks()
 		rows := make([]table.Row, len(m.tasks))
 		for i, t := range m.tasks {
 			rows[i] = table.Row{t.ID, t.Priority, strings.Join(t.Tags, ","), t.Epic}
 		}
 		m.table.SetRows(nil)
-		m.table.SetColumns(taskColumns(m.listWidth()))
+		m.table.SetColumns(m.sortMark(taskColumns(m.listWidth())))
 		m.table.SetRows(rows)
 	}
+	// The height is set here, not at New: SetHeight subtracts the header as it actually renders —
+	// two lines now that the columns and styles exist — so the table comes out exactly as tall as
+	// the bordered detail pane beside it.
+	m.table.SetHeight(m.paneHeight() + 2)
 	if m.table.Cursor() >= len(m.table.Rows()) {
 		m.table.SetCursor(0)
 	}
@@ -201,6 +211,7 @@ func (m *tui) updateList(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.mode = modeTasks
 		}
 		m.trash = false
+		m.sortCol = -1 // the columns change meaning with the mode, so the order does not carry over
 		m.reload()
 	case "tab":
 		m.focus = focusDetail
@@ -247,6 +258,22 @@ func (m *tui) updateList(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "f":
 		if m.mode == modeTasks {
 			return m, m.openTagFilter()
+		}
+	case "1", "2", "3", "4":
+		col := int(msg.String()[0] - '1')
+		if m.mode == modeDocs && col > 2 {
+			return m, nil
+		}
+		if col == m.sortCol {
+			m.sortAsc = !m.sortAsc
+		} else {
+			m.sortCol, m.sortAsc = col, true
+		}
+		m.resort()
+	case "0":
+		if m.sortCol >= 0 {
+			m.sortCol = -1
+			m.resort()
 		}
 	case "/":
 		m.searchIn.SetValue(m.search)
@@ -389,19 +416,26 @@ func (m *tui) scrollToLink() {
 
 // ---- layout and view ----
 
-func (m *tui) listWidth() int  { w := m.width * 2 / 5; return max(w, 30) }
-func (m *tui) paneWidth() int  { return max(m.width-m.listWidth()-2, 20) }
-func (m *tui) paneHeight() int { return max(m.height-2, 5) }
+func (m *tui) listWidth() int { w := m.width * 2 / 5; return max(w, 30) }
+func (m *tui) paneWidth() int { return max(m.width-m.listWidth()-2, 20) }
+
+// paneHeight budgets the vertical space: the pane's two border lines and the status line come out
+// of the terminal height. Overshooting is not cosmetic — bubbletea trims an oversized frame from
+// the TOP, so a frame one line too tall showed everything except the table's header row.
+func (m *tui) paneHeight() int { return max(m.height-3, 5) }
 
 func (m *tui) layout() {
-	m.table = table.New(table.WithFocused(true), table.WithHeight(m.paneHeight()))
+	// No WithHeight here: at New the table has no columns yet, so the option would measure an EMPTY
+	// header (one line) where the real one — title plus its bottom rule — is two. reload sets the
+	// height after the columns exist.
+	m.table = table.New(table.WithFocused(true))
 	s := table.DefaultStyles()
 	s.Header = s.Header.Bold(true).Foreground(lipgloss.Color("12")).BorderStyle(lipgloss.NormalBorder()).BorderBottom(true)
 	s.Selected = s.Selected.Background(lipgloss.Color("237")).Foreground(lipgloss.Color("15"))
 	m.table.SetStyles(s)
 
 	m.detail = viewport.New(m.paneWidth(), m.paneHeight())
-	m.viewer = viewport.New(m.width-2, m.height-2)
+	m.viewer = viewport.New(m.width-2, m.paneHeight())
 
 	// An explicit style, chosen from the background probed at startup — auto degrades to notty
 	// inside the alt screen. The heading prefixes go: glamour's stock styles keep "## " in front
@@ -429,6 +463,101 @@ func docColumns(w int) []table.Column {
 	id := max(w/3, 18)
 	return []table.Column{{Title: "ID", Width: id}, {Title: "KIND", Width: 9},
 		{Title: "PATH", Width: max(w-id-15, 10)}}
+}
+
+// sortMark labels the sorted column in its own header — the arrow says both which column orders the
+// list and which way — so the order on screen is explained by the screen, not by remembered keys.
+func (m *tui) sortMark(cols []table.Column) []table.Column {
+	if m.sortCol >= 0 && m.sortCol < len(cols) {
+		mark := "↓"
+		if m.sortAsc {
+			mark = "↑"
+		}
+		cols[m.sortCol].Title += mark
+	}
+	return cols
+}
+
+// sortTasks orders the visible tasks by the chosen column; -1 keeps the store's order. PRI sorts by
+// rank — the number behind the label — so the P scale, E4, EE and v2 interleave the way the backlog
+// means them to, not alphabetically.
+func (m *tui) sortTasks() {
+	if m.sortCol < 0 || m.sortCol > 3 {
+		return
+	}
+	key := func(t todo.Task) string {
+		switch m.sortCol {
+		case 0:
+			return t.ID
+		case 1:
+			return fmt.Sprintf("%02d %s", t.Rank, t.Priority)
+		case 2:
+			return strings.Join(t.Tags, ",")
+		default:
+			return t.Epic
+		}
+	}
+	sort.SliceStable(m.tasks, func(i, j int) bool {
+		a, b := key(m.tasks[i]), key(m.tasks[j])
+		if m.sortAsc {
+			return a < b
+		}
+		return a > b
+	})
+}
+
+func (m *tui) sortDocs() {
+	if m.sortCol < 0 || m.sortCol > 2 {
+		return
+	}
+	key := func(d todo.Doc) string {
+		switch m.sortCol {
+		case 0:
+			return d.ID
+		case 1:
+			return d.Kind
+		default:
+			return d.Path
+		}
+	}
+	sort.SliceStable(m.docs, func(i, j int) bool {
+		a, b := key(m.docs[i]), key(m.docs[j])
+		if m.sortAsc {
+			return a < b
+		}
+		return a > b
+	})
+}
+
+// resort re-reads under the new order and keeps the SAME row selected — sorting reorders the list,
+// and a cursor pinned to an index would silently land on a different task.
+func (m *tui) resort() {
+	var id string
+	if t, ok := m.selectedTask(); ok {
+		id = t.ID
+	} else if d, ok := m.selectedDoc(); ok {
+		id = d.ID
+	}
+	m.reload()
+	if len(id) == 0 {
+		return
+	}
+	if m.mode == modeDocs {
+		for i, d := range m.docs {
+			if d.ID == id {
+				m.table.SetCursor(i)
+				break
+			}
+		}
+	} else {
+		for i, t := range m.tasks {
+			if t.ID == id {
+				m.table.SetCursor(i)
+				break
+			}
+		}
+	}
+	m.rebuildDetail()
 }
 
 var (
@@ -632,6 +761,6 @@ func (m *tui) statusLine() string {
 		n = len(m.docs)
 	}
 	return stStatus.Render(fmt.Sprintf(
-		" %s  tag:%s  status:%s%s  |  %d shown  |  a add · e edit · d del · c commit · l link · t trash · s status · f tag · Tab detail · / search · v view · w wiki · q quit",
+		" %s  tag:%s  status:%s%s  |  %d shown  |  a add · e edit · d del · c commit · l link · t trash · s status · f tag · 1-4 sort · Tab detail · / search · v view · w wiki · q quit",
 		scope, tag, stf, srch, n))
 }

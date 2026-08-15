@@ -96,6 +96,8 @@ between the backlog and the wiki; the same keys serve both. A task's detail show
 linked to, its relations by type — blocked by, blocks — and the commits recorded against it; a
 doc's detail shows the tasks that point at it. Tab moves focus into the pane, where long tasks
 scroll and every reference — a tag, a related task, a doc — is a link n/p walk and Enter follows.
+Digits sort the list by that column — `1`–`4`, the same digit again flips the direction, `0`
+restores the store's order — and the sorted column carries the arrow in its header.
 
 ```
 ↑ ↓   move            a   add           d   delete (to trash)
@@ -123,19 +125,24 @@ Wiring it into a project is one command, run in the project's directory:
 ```
 todo install                       # default database (the XDG one; projects are epics)
 todo install --db ./backlog.db     # or a database of this project's own
+todo install --epic myproj         # the project's root epic (default: the directory's name)
 ```
 
 It writes — or merges into — the project's `.mcp.json`, the file Claude Code reads at startup,
 preserving every other server the file already names and replacing only the `todo` entry. The
 command path is this binary resolved absolute, because an MCP host does not inherit your shell's
-PATH.
+PATH. The root epic names which slice of the shared database is this project: it is written into
+the server's environment as `TODO_EPIC` — an add that names no epic lands there, in the CLI and
+over MCP alike — and into the `CLAUDE.md` block by name, so the assistant files work where the
+project keeps it.
 
 It also maintains a short usage section in the project's `CLAUDE.md`, between markers it owns —
 created if the file is absent, replaced in place on a re-install, and never touching a byte outside
-the markers — so the assistant knows the backlog exists without being told. Pass `--no-claude-md`
-to skip that half. `todo uninstall` takes both back out — the server entry and the marked block —
-and touches nothing else. For a host with a different config format, the entry it writes is the
-shape to translate:
+the markers — so the assistant knows the backlog exists without being told. `--instructions` names
+that file when the host reads a different one (`--instructions AGENTS.md`), and `--instructions
+none` writes no block at all. `todo uninstall` takes both back out — the server entry and the
+marked block — and touches nothing else. For a host with a different config format, the entry it
+writes is the shape to translate:
 
 ```json
 {
