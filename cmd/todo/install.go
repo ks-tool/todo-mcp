@@ -118,9 +118,13 @@ The project's tasks and design docs live in one SQLite backlog served by the ` +
 ...) — they return structured data; the ` + "`todo`" + ` CLI answers the same questions in a shell
 (` + "`todo ready`, `todo doc list --search <q>`, `todo docs <task-id>`" + `). ` + where + `, and epics
 outside this list are other projects. TAGS are free labels for slicing, and the ` + "`tag`" + ` filter
-takes a comma list a task must carry all of (` + "`todo_list {tag: \"ee,scheduler\"}`" + `). Record
-finished work with ` + "`todo_done`" + ` and map commits with ` + "`sync_commits`" + `; deletion is always
-soft (trash + restore), so nothing is lost to a wrong call.
+takes a comma list a task must carry all of (` + "`todo_list {tag: \"ee,scheduler\"}`" + `).
+
+**A commit is the trigger to close tasks.** A commit closes every task whose work it finishes — one
+commit may close several. Name their ids in the message (` + "`sync_commits`" + ` then maps the commit
+to each) or ` + "`task_commit`" + ` each against the same sha, and mark each ` + "`todo_done`" + `. Do this
+as part of committing, not later — an unclosed task whose work has shipped is a lie the backlog then
+tells. Deletion is always soft (trash + restore), so nothing is lost to a wrong call.
 ` + blockEnd + "\n"
 }
 
