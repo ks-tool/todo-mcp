@@ -80,6 +80,11 @@ todo render ee > tasks.ee.md                # write one tag's slice back out, no
 `todo render` is the inverse of `todo import`, and the two round-trip: importing what render wrote
 gives the same tasks, so the database is a safe source of truth rather than a lossy cache.
 
+`todo backup [dir-or-file]` snapshots the database with SQLite's `VACUUM INTO` — transactionally
+consistent even while the database is in use — then opens the copy and counts its rows against the
+original before calling it a backup. A directory (default: the database's own) gets a timestamped
+filename; an existing file is refused, never overwritten.
+
 ## Terminal UI
 
 ```

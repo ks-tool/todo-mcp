@@ -174,3 +174,28 @@ func ids(ts []Task) []string {
 	}
 	return out
 }
+
+// TestBackupIsConsistentAndRefusesOverwrite pins what backup promises: the copy opens, holds the
+// same rows, and an existing destination is refused rather than clobbered.
+func TestBackupIsConsistentAndRefusesOverwrite(t *testing.T) {
+	st := openTemp(t)
+	_ = st.Put(Task{ID: "x-01", Epic: "X", Status: StatusOpen, Text: "a"})
+	_ = st.PutDoc(Doc{ID: "doc-y", Path: "y", Title: "Y", Body: "b"})
+
+	dest := filepath.Join(t.TempDir(), "snap.db")
+	if err := st.BackupTo(dest); err != nil {
+		t.Fatal(err)
+	}
+	copyStore, err := Open(dest)
+	if err != nil {
+		t.Fatalf("the snapshot does not open: %v", err)
+	}
+	defer func() { _ = copyStore.Close() }()
+	tasks, docs, err := copyStore.Counts()
+	if err != nil || tasks != 1 || docs != 1 {
+		t.Fatalf("the snapshot disagrees: tasks=%d docs=%d err=%v", tasks, docs, err)
+	}
+	if err := st.BackupTo(dest); err == nil {
+		t.Fatal("an existing destination must be refused, not overwritten")
+	}
+}

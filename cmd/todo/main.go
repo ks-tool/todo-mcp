@@ -472,7 +472,51 @@ func frontCommands() []*cobra.Command {
 		Use: "schema", Short: "the field and command contract, as JSON", Args: cobra.NoArgs,
 		Run: func(_ *cobra.Command, _ []string) { emitSchema() },
 	}
-	return []*cobra.Command{tui, mcp, install, uninstall, schema}
+	backup := &cobra.Command{
+		Use:   "backup [dir-or-file]",
+		Short: "write a verified snapshot of the database",
+		Long: `A consistent snapshot via SQLite's own VACUUM INTO — safe while the database is in use, and
+refused rather than overwritten when the destination exists. A directory (or no argument, meaning
+the database's own directory) gets a timestamped file; an explicit file path is used as given.
+The copy is then OPENED and counted, because a backup that cannot be read is not a backup.`,
+		Args: cobra.MaximumNArgs(1),
+		RunE: withStore(func(st *todo.Store, _ *cobra.Command, args []string) error {
+			src := resolveDB()
+			dest := filepath.Dir(src)
+			if len(args) > 0 {
+				dest = args[0]
+			}
+			if fi, err := os.Stat(dest); err == nil && fi.IsDir() {
+				stamp := time.Now().Format("20060102-150405")
+				base := strings.TrimSuffix(filepath.Base(src), filepath.Ext(src))
+				dest = filepath.Join(dest, base+"-"+stamp+".db")
+			}
+			if err := st.BackupTo(dest); err != nil {
+				return err
+			}
+			copyStore, err := todo.Open(dest)
+			if err != nil {
+				return fmt.Errorf("the snapshot was written but does not open: %w", err)
+			}
+			defer func() { _ = copyStore.Close() }()
+			tasks, docs, err := copyStore.Counts()
+			if err != nil {
+				return fmt.Errorf("the snapshot was written but does not read: %w", err)
+			}
+			origTasks, origDocs, err := st.Counts()
+			if err != nil {
+				return err
+			}
+			if tasks != origTasks || docs != origDocs {
+				return fmt.Errorf("the snapshot disagrees with the database: %d/%d tasks, %d/%d docs",
+					tasks, origTasks, docs, origDocs)
+			}
+			fmt.Fprintf(os.Stderr, "backed up %d tasks and %d docs, verified by reading the copy\n", tasks, docs)
+			fmt.Println(dest)
+			return nil
+		}),
+	}
+	return []*cobra.Command{tui, mcp, install, uninstall, schema, backup}
 }
 
 // jsonOut is true when the caller wants machine output: --json, or any time stdout is not a tty.
@@ -602,8 +646,9 @@ func emitSchema() {
 			"dep":  "<id> <depends-on-id> [--del]", "suggest": "<id> [--apply]",
 			"delete": "<id> — soft-delete to trash", "restore": "<id>", "trash": "the soft-deleted",
 			"render": "[tag] — rebuild markdown to stdout", "tui": "interactive terminal UI",
-			"doc":  "add|show|edit|list|rm|restore|import|link-slugs — the wiki",
-			"docs": "<task-id> — the docs a task maps to", "tasks": "<doc-id> — the tasks a doc maps to",
+			"backup": "[dir-or-file] — verified VACUUM INTO snapshot; never overwrites",
+			"doc":    "add|show|edit|list|rm|restore|import|link-slugs — the wiki",
+			"docs":   "<task-id> — the docs a task maps to", "tasks": "<doc-id> — the tasks a doc maps to",
 			"commit": "<task> <sha> — record a commit", "commits": "<task>",
 			"sync-commits": "[--dir --rev] — scan git log for task ids",
 		},

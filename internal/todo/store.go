@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"os"
 	"strings"
 
 	_ "modernc.org/sqlite"
@@ -456,6 +457,28 @@ WHERE t.deleted_at = '' ORDER BY je.value`)
 		out = append(out, e)
 	}
 	return out, rows.Err()
+}
+
+// BackupTo writes a consistent snapshot of the whole database to path, via VACUUM INTO: a
+// transactional copy made by SQLite itself, safe while the database is open — a plain file copy
+// can catch the middle of a write. It refuses an existing destination rather than overwriting a
+// previous backup, which is the property that makes keeping several of them trivial.
+func (s *Store) BackupTo(path string) error {
+	if _, err := os.Stat(path); err == nil {
+		return fmt.Errorf("%s already exists; a backup never overwrites", path)
+	}
+	// The path travels as a bound parameter, so a quote in a directory name cannot break out.
+	_, err := s.db.Exec(`VACUUM INTO ?`, path)
+	return err
+}
+
+// Counts is the one-line inventory — what a backup verification reports.
+func (s *Store) Counts() (tasks, docs int, err error) {
+	if err = s.db.QueryRow(`SELECT count(*) FROM tasks`).Scan(&tasks); err != nil {
+		return
+	}
+	err = s.db.QueryRow(`SELECT count(*) FROM docs`).Scan(&docs)
+	return
 }
 
 // Stat is one row of the stats report.
