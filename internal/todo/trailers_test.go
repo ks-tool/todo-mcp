@@ -53,3 +53,51 @@ func TestTrailersDerivedLayer(t *testing.T) {
 		t.Errorf("truncating trailers must not touch authored tasks, got %d", len(ls))
 	}
 }
+
+// TestTrailerEpicResolution covers todomcp-03: a trailer's epic is its explicit local binding
+// first, then the epic of the task the commit closed, then the repo it came from — and the binding
+// is authored, so it survives a truncate of the derived cache.
+func TestTrailerEpicResolution(t *testing.T) {
+	st := openTemp(t)
+	if err := st.PutTrailer(Trailer{SHA: "sha-1", Repo: "from-repo", Subject: "x"}); err != nil {
+		t.Fatal(err)
+	}
+
+	// With nothing bound and no closing task, the repo answers.
+	if e, _ := st.TrailerEpic("sha-1"); e != "from-repo" {
+		t.Errorf("unbound trailer must fall back to its repo, got %q", e)
+	}
+
+	// A task that records the commit lends its epic — inherited, not stored.
+	if err := st.Put(Task{ID: "svc-01", Epic: "service", Text: "closed by sha-1"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.Link("svc-01", LinkCommit, "sha-1", "x"); err != nil {
+		t.Fatal(err)
+	}
+	if e, _ := st.TrailerEpic("sha-1"); e != "service" {
+		t.Errorf("a closing task must lend its epic, got %q", e)
+	}
+
+	// An explicit binding wins over both, and survives a rebuild of the derived layer.
+	if err := st.BindTrailerEpic("sha-1", "mine"); err != nil {
+		t.Fatal(err)
+	}
+	if e, _ := st.TrailerEpic("sha-1"); e != "mine" {
+		t.Errorf("an explicit binding must win, got %q", e)
+	}
+	if err := st.TruncateTrailers(); err != nil {
+		t.Fatal(err)
+	}
+	if e, _ := st.TrailerEpic("sha-1"); e != "mine" {
+		t.Errorf("the binding is authored and must survive a truncate, got %q", e)
+	}
+
+	// Clearing it falls back to the inherited epic (the closing task, still present).
+	if err := st.UnbindTrailerEpic("sha-1"); err != nil {
+		t.Fatal(err)
+	}
+	if e, _ := st.TrailerEpic("sha-1"); e != "service" {
+		t.Errorf("after unbind the inherited epic answers, got %q", e)
+	}
+}

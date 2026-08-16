@@ -1,6 +1,9 @@
 package todo
 
-import "encoding/json"
+import (
+	"database/sql"
+	"encoding/json"
+)
 
 // The derived layer: trailers are git commits cached as graph nodes. This file is their whole
 // storage surface — write one, read one, list them, and drop them all. reindex (the rebuild from
@@ -46,6 +49,58 @@ func (s *Store) TruncateTrailers() error {
 	return err
 }
 
+// BindTrailerEpic files a trailer under one of your local epics. The binding is authored and
+// survives reindex — it is how a commit from someone else's history (a fork loaded as trailers)
+// becomes part of your own project's graph. Idempotent; a second call re-files it. An empty epic
+// clears the binding, the same as UnbindTrailerEpic.
+func (s *Store) BindTrailerEpic(sha, epic string) error {
+	if len(epic) == 0 {
+		return s.UnbindTrailerEpic(sha)
+	}
+	_, err := s.db.Exec(`INSERT INTO trailer_epics (sha, epic) VALUES (?,?)
+ON CONFLICT(sha) DO UPDATE SET epic=excluded.epic`, sha, epic)
+	return err
+}
+
+// UnbindTrailerEpic drops the explicit binding, so the trailer falls back to an inherited or its
+// repo's epic.
+func (s *Store) UnbindTrailerEpic(sha string) error {
+	_, err := s.db.Exec(`DELETE FROM trailer_epics WHERE sha = ?`, sha)
+	return err
+}
+
+// TrailerEpic resolves which epic a trailer belongs to, in one fixed order: the explicit local
+// binding first; then, with none, the epic of the task the commit closed — inherited through the
+// commit link a task carries, computed here rather than stored so it tracks the task without a
+// second source of truth; and finally the repo the trailer came from. It is a local, mutable view:
+// nothing here is written to git or shared.
+func (s *Store) TrailerEpic(sha string) (string, error) {
+	var epic string
+	err := s.db.QueryRow(`SELECT epic FROM trailer_epics WHERE sha = ?`, sha).Scan(&epic)
+	if err == nil {
+		return epic, nil
+	}
+	if err != sql.ErrNoRows {
+		return "", err
+	}
+	// The task the commit closed — the first task that records this sha as a commit — lends its epic.
+	err = s.db.QueryRow(`SELECT t.epic FROM tasks t
+JOIN links l ON l.task_id = t.id
+WHERE l.kind = ? AND l.ref = ? AND t.deleted_at = '' ORDER BY t.rank, t.ord LIMIT 1`, LinkCommit, sha).Scan(&epic)
+	if err == nil {
+		return epic, nil
+	}
+	if err != sql.ErrNoRows {
+		return "", err
+	}
+	// Neither bound nor inherited: the repo the reindex filed it under.
+	err = s.db.QueryRow(`SELECT repo FROM trailers WHERE sha = ?`, sha).Scan(&epic)
+	if err == sql.ErrNoRows {
+		return "", nil
+	}
+	return epic, err
+}
+
 func (s *Store) scanTrailers(where string, args ...any) ([]Trailer, error) {
 	rows, err := s.db.Query(`SELECT sha, repo, subject, body, tags, parents, at FROM trailers `+where, args...)
 	if err != nil {
@@ -64,12 +119,4 @@ func (s *Store) scanTrailers(where string, args ...any) ([]Trailer, error) {
 		out = append(out, t)
 	}
 	return out, rows.Err()
-}
-
-// shortSHA is the seven-character handle a person reads a commit by; the full sha stays the key.
-func shortSHA(sha string) string {
-	if len(sha) > 7 {
-		return sha[:7]
-	}
-	return sha
 }

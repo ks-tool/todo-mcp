@@ -116,6 +116,15 @@ CREATE TABLE IF NOT EXISTS trailers (
 );
 CREATE INDEX IF NOT EXISTS trailers_by_repo ON trailers(repo);
 
+-- The trailer→epic binding is AUTHORED, not derived: it is the local decision to file a commit from
+-- the history under one of your own epics, and it must survive the reindex that rebuilds the trailer
+-- cache. So it lives in its own table, keyed by sha, and reindex never touches it. Epics are local —
+-- never written to a commit, never synced between databases; this is where that locality is kept.
+CREATE TABLE IF NOT EXISTS trailer_epics (
+    sha  TEXT PRIMARY KEY,
+    epic TEXT NOT NULL
+);
+
 CREATE VIRTUAL TABLE IF NOT EXISTS trailers_fts USING fts5(
     sha UNINDEXED, subject, body, content='trailers', content_rowid='rowid'
 );

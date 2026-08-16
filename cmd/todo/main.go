@@ -53,8 +53,99 @@ Output is a table at a terminal, JSON Lines into a pipe or under --json. Exit: 0
 
 	root.AddCommand(taskCommands()...)
 	root.AddCommand(wikiCommands()...)
+	root.AddCommand(trailerCommands()...)
 	root.AddCommand(frontCommands()...)
 	return root
+}
+
+// trailerCommands operate on the derived layer's nodes — the git commits reindex projects into the
+// graph. Only the epic binding is authored (local, kept across a reindex); listing reads the cache.
+func trailerCommands() []*cobra.Command {
+	trailer := &cobra.Command{Use: "trailer", Short: "git commits projected into the graph (reindex fills them)"}
+
+	bind := &cobra.Command{
+		Use: "bind <sha> <epic>", Short: "file a trailer under a local epic (--del to clear)", Args: cobra.RangeArgs(1, 2),
+		RunE: withStore(func(st *todo.Store, cmd *cobra.Command, args []string) error {
+			if mustBool(cmd, "del") {
+				if err := st.UnbindTrailerEpic(args[0]); err != nil {
+					return err
+				}
+				fmt.Fprintf(os.Stderr, "%s unbound\n", shortref(args[0]))
+				return nil
+			}
+			if len(args) != 2 {
+				return fmt.Errorf("bind needs <sha> <epic> (or <sha> --del)")
+			}
+			if err := st.BindTrailerEpic(args[0], args[1]); err != nil {
+				return err
+			}
+			fmt.Fprintf(os.Stderr, "%s -> %s\n", shortref(args[0]), args[1])
+			return nil
+		}),
+	}
+	bind.Flags().Bool("del", false, "clear the binding instead of setting it")
+
+	epic := &cobra.Command{
+		Use: "epic <sha>", Short: "the epic a trailer resolves to (binding, else inherited, else repo)", Args: cobra.ExactArgs(1),
+		RunE: withStore(func(st *todo.Store, _ *cobra.Command, args []string) error {
+			e, err := st.TrailerEpic(args[0])
+			if err != nil {
+				return err
+			}
+			if len(e) == 0 {
+				fmt.Fprintln(os.Stderr, "(no epic)")
+				os.Exit(2)
+			}
+			fmt.Println(e)
+			return nil
+		}),
+	}
+
+	list := &cobra.Command{
+		Use: "list [repo]", Short: "the trailer nodes in the cache, optionally by repo", Args: cobra.MaximumNArgs(1),
+		RunE: withStore(func(st *todo.Store, _ *cobra.Command, args []string) error {
+			repo := ""
+			if len(args) > 0 {
+				repo = args[0]
+			}
+			ts, err := st.Trailers(repo)
+			if err != nil {
+				return err
+			}
+			if jsonOut() {
+				enc := json.NewEncoder(os.Stdout)
+				for _, t := range ts {
+					_ = enc.Encode(t)
+				}
+				if len(ts) == 0 {
+					os.Exit(2)
+				}
+				return nil
+			}
+			if len(ts) == 0 {
+				fmt.Fprintln(os.Stderr, "(none)")
+				os.Exit(2)
+			}
+			w := tabwriter.NewWriter(os.Stdout, 0, 2, 2, ' ', 0)
+			fmt.Fprintln(w, "SHA\tREPO\tWHEN\tSUBJECT")
+			for _, t := range ts {
+				fmt.Fprintf(w, "%s\t%s\t%s\t%s\n", shortref(t.SHA), trunc(t.Repo, 16), whenShort(t.At), oneLine(t.Subject, 60))
+			}
+			return w.Flush()
+		}),
+	}
+
+	trailer.AddCommand(bind, epic, list)
+	return []*cobra.Command{trailer}
+}
+
+// shortref is the seven-character handle a person reads a commit by, for CLI output; the store keeps
+// the full sha.
+func shortref(sha string) string {
+	if len(sha) > 7 {
+		return sha[:7]
+	}
+	return sha
 }
 
 // resolveDB is where the backlog comes from, in one fixed order: --db, then TODO_DB — read the same
