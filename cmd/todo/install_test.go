@@ -138,6 +138,52 @@ func TestClaudeBlockIsOwnedBetweenMarkers(t *testing.T) {
 	}
 }
 
+// TestConfigEnvReadsMCPJSON pins todomcp-01: the CLI reads TODO_DB/TODO_EPICS from the `todo`
+// server's env in the current directory's .mcp.json, ahead of the ambient value, so a shell in the
+// project root reaches the same database and epics the server serves — and --db still wins.
+func TestConfigEnvReadsMCPJSON(t *testing.T) {
+	dir := t.TempDir()
+	wd, _ := os.Getwd()
+	t.Cleanup(func() { _ = os.Chdir(wd) })
+	if err := os.Chdir(dir); err != nil {
+		t.Fatal(err)
+	}
+	mcp := `{"mcpServers":{"todo":{"command":"/bin/todo","args":["mcp"],
+	  "env":{"TODO_DB":"/proj/backlog.db","TODO_EPICS":"alpha,beta"}}}}`
+	if err := os.WriteFile(".mcp.json", []byte(mcp), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("TODO_DB", "/env/loses.db")
+	t.Setenv("TODO_EPICS", "ambient")
+
+	if got := configEnv("TODO_DB"); got != "/proj/backlog.db" {
+		t.Errorf(".mcp.json TODO_DB must win over the ambient value, got %q", got)
+	}
+	if got := rootEpic(); got != "alpha" {
+		t.Errorf("rootEpic must come from .mcp.json TODO_EPICS, got %q", got)
+	}
+	if got := resolveDB(); got != "/proj/backlog.db" {
+		t.Errorf("resolveDB must honour .mcp.json TODO_DB, got %q", got)
+	}
+	flagDB = "/flag/wins.db"
+	t.Cleanup(func() { flagDB = "" })
+	if got := resolveDB(); got != "/flag/wins.db" {
+		t.Errorf("--db must still win over .mcp.json, got %q", got)
+	}
+
+	// A key absent from .mcp.json falls through to the ambient environment.
+	flagDB = ""
+	if got := configEnv("TODO_DB"); got != "/proj/backlog.db" {
+		t.Errorf("present key resolves to file value, got %q", got)
+	}
+	if err := os.WriteFile(".mcp.json", []byte(`{"mcpServers":{"todo":{"command":"/bin/todo","args":["mcp"]}}}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if got := configEnv("TODO_DB"); got != "/env/loses.db" {
+		t.Errorf("with no env block the ambient value answers, got %q", got)
+	}
+}
+
 // TestDBResolutionOrder pins the one fixed order: --db, then TODO_DB, then a backlog.db in the
 // current directory, then the XDG default. Each step is checked by knocking the one above it away.
 func TestDBResolutionOrder(t *testing.T) {

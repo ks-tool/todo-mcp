@@ -1,7 +1,6 @@
 package main
 
 import (
-	"os"
 	"strings"
 	"time"
 )
@@ -17,10 +16,11 @@ func whenShort(at string) string {
 	return t.Format("2006-01-02 15:04")
 }
 
-// rootEpic is the first entry of $TODO_EPICS — the comma-separated list of this project's epics
-// that install writes into the server's environment. An add that names no epic lands there.
+// rootEpic is the first entry of TODO_EPICS — the comma-separated list of this project's epics that
+// install writes into the server's environment, read the same way the database is (configEnv: the
+// current directory's .mcp.json before the ambient value). An add that names no epic lands there.
 func rootEpic() string {
-	if xs := splitComma(os.Getenv("TODO_EPICS")); len(xs) > 0 {
+	if xs := splitComma(configEnv("TODO_EPICS")); len(xs) > 0 {
 		return xs[0]
 	}
 	return ""

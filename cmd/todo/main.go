@@ -39,7 +39,8 @@ func rootCmd() *cobra.Command {
 		Use:   "todo",
 		Short: "a backlog and a wiki you can query — CLI, TUI and MCP over one database",
 		Long: `Run with no command to open the interactive TUI (backlog + wiki, soft-delete, trash).
-The database, for every command: --db <path>, else $TODO_DB, else ./backlog.db, else the XDG default.
+The database, for every command: --db <path>, else TODO_DB (read from ./.mcp.json before the ambient
+value), else ./backlog.db, else the XDG default.
 Output is a table at a terminal, JSON Lines into a pipe or under --json. Exit: 0 found, 2 empty, 1 error.`,
 		SilenceUsage:  true,
 		SilenceErrors: true,
@@ -56,14 +57,15 @@ Output is a table at a terminal, JSON Lines into a pipe or under --json. Exit: 0
 	return root
 }
 
-// resolveDB is where the backlog comes from, in one fixed order: --db, the TODO_DB environment
-// (what an MCP host passes the server from .mcp.json), a backlog.db in the current directory (the
-// project-local convention), and the XDG default so a plain `todo` still has a home.
+// resolveDB is where the backlog comes from, in one fixed order: --db, then TODO_DB — read the same
+// way the MCP host reads it, from the .mcp.json in the current directory before the ambient
+// environment (configEnv) — then a backlog.db in the current directory (the project-local
+// convention), and the XDG default so a plain `todo` still has a home.
 func resolveDB() string {
 	if len(flagDB) > 0 {
 		return flagDB
 	}
-	if p := os.Getenv("TODO_DB"); len(p) > 0 {
+	if p := configEnv("TODO_DB"); len(p) > 0 {
 		return p
 	}
 	if _, err := os.Stat("backlog.db"); err == nil {
@@ -77,6 +79,41 @@ func resolveDB() string {
 	dir := filepath.Join(base, "todo")
 	_ = os.MkdirAll(dir, 0o755)
 	return filepath.Join(dir, "backlog.db")
+}
+
+// configEnv reads a project setting the way the MCP host would — from the `todo` server's `env` in
+// the .mcp.json of the CURRENT directory (no walk-up; the project root is where the file and the
+// commands both live), falling back to the ambient environment when the file, the entry or the key
+// is absent. It is what lets `todo` on a shell reach the very database and epics the server serves,
+// so a `reindex` or an `add` from the project root needs no --db.
+func configEnv(key string) string {
+	if v, ok := projectEnv()[key]; ok {
+		return v
+	}
+	return os.Getenv(key)
+}
+
+// projectEnv is the `todo` server's env block from ./.mcp.json, or nil when there is none to read.
+func projectEnv() map[string]string {
+	cfg, err := readMCPConfig(".mcp.json")
+	if err != nil {
+		return nil
+	}
+	entry, ok := cfg.Servers["todo"].(map[string]any)
+	if !ok {
+		return nil
+	}
+	env, ok := entry["env"].(map[string]any)
+	if !ok {
+		return nil
+	}
+	out := make(map[string]string, len(env))
+	for k, v := range env {
+		if s, ok := v.(string); ok {
+			out[k] = s
+		}
+	}
+	return out
 }
 
 // withStore opens the database around a command body, so every RunE reads the same way and no
