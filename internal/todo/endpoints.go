@@ -1,5 +1,7 @@
 package todo
 
+import "strings"
+
 // The endpoint layer is the bridge across the network boundary. Each service's API surface — its
 // (method, path) endpoints, each optionally bound to the code symbol that implements or calls it —
 // is ingested per repo. Two services in one database then connect where their endpoints match: a
@@ -61,3 +63,41 @@ func (s *Store) endpointsScoped(repo string) ([]StoredEndpoint, error) {
 
 // Endpoints lists a repo's endpoints.
 func (s *Store) Endpoints(repo string) ([]StoredEndpoint, error) { return s.endpointsScoped(repo) }
+
+// BindEndpoints turns a spec's endpoints into stored rows, binding each to the code symbol whose name
+// matches its operationId — matched on a NORMALIZED name (case and separators dropped), so an API's
+// `createUser` binds a Go `CreateUser` and a Python `create_user` alike. That is what lets a path
+// cross between services written in different languages.
+func (s *Store) BindEndpoints(repo string, eps []Endpoint) ([]StoredEndpoint, error) {
+	syms, err := s.symbolsScoped(repo)
+	if err != nil {
+		return nil, err
+	}
+	byNorm := make(map[string]string, len(syms))
+	for _, sym := range syms {
+		if n := normName(sym.Label); len(n) > 0 {
+			byNorm[n] = sym.SID
+		}
+	}
+	out := make([]StoredEndpoint, 0, len(eps))
+	for _, e := range eps {
+		r := StoredEndpoint{Repo: repo, Method: e.Method, Path: e.Path}
+		if len(e.OpID) > 0 {
+			r.Symbol = byNorm[normName(e.OpID)]
+		}
+		out = append(out, r)
+	}
+	return out, nil
+}
+
+// normName reduces a name to letters and digits, lower-cased — so createUser, CreateUser and
+// create_user() all collapse to the same key.
+func normName(s string) string {
+	var b []rune
+	for _, r := range strings.ToLower(s) {
+		if r >= 'a' && r <= 'z' || r >= '0' && r <= '9' {
+			b = append(b, r)
+		}
+	}
+	return string(b)
+}

@@ -5,7 +5,8 @@ API are, in code, two disconnected graphs: one never calls the other's functions
 request. This feature stitches the two together, so `todo path` can run from a function in one
 service, across the network boundary, to the function that serves it in the other.
 
-There is a runnable [example](../examples/cross-service/).
+Runnable examples: a [single-language walkthrough](../examples/cross-service/) and a
+[Go-server / Python-client](../examples/cross-service-go-python/) one that crosses languages too.
 
 ## The three links
 
@@ -44,8 +45,10 @@ todo path <serviceA>:<function> <serviceB>:<function>
 
 - Each service's **symbols must be ingested first** — the binding attaches an endpoint to an existing
   symbol node.
-- The binding relies on the **`operationId`** (rpc / field name) matching the code symbol's name. A
-  spec without operationIds still produces endpoint nodes and the boundary edge, but no code binding,
-  so a path reaches the endpoint but not the function behind it.
+- The binding relies on the **`operationId`** (rpc / field name) matching the code symbol's name,
+  **normalized** — case and separators (`_`, `-`, `.`) dropped — so `createUser` binds a Go
+  `CreateUser` and a Python `create_user` alike, and a path crosses between services written in
+  different languages. A spec without operationIds still produces endpoint nodes and the boundary
+  edge, but no code binding, so a path reaches the endpoint but not the function behind it.
 - The boundary is matched by `(method, path)`, the same identity `todo contract` uses; schema drift on
   that endpoint is a [contract](contract.md) concern, separate from whether a path exists.

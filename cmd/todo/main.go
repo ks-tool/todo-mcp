@@ -964,17 +964,15 @@ service's symbols first with 'todo symbols'.`,
 			if err != nil {
 				return err
 			}
-			rows := make([]todo.StoredEndpoint, 0, len(eps))
+			rows, err := st.BindEndpoints(repo, eps)
+			if err != nil {
+				return err
+			}
 			bound := 0
-			for _, e := range eps {
-				r := todo.StoredEndpoint{Repo: repo, Method: e.Method, Path: e.Path}
-				if len(e.OpID) > 0 {
-					if sym, ok, _ := st.FindSymbol(repo, e.OpID); ok {
-						r.Symbol = sym.SID
-						bound++
-					}
+			for _, r := range rows {
+				if len(r.Symbol) > 0 {
+					bound++
 				}
-				rows = append(rows, r)
 			}
 			if err := st.SetEndpoints(repo, rows); err != nil {
 				return err

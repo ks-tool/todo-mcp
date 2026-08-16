@@ -1,0 +1,9 @@
+{
+  "nodes": [
+    {"id": "users_createuser", "label": "CreateUser()", "file_type": "code", "source_file": "server.go", "source_location": "L22"},
+    {"id": "users_saveuser", "label": "SaveUser()", "file_type": "code", "source_file": "server.go", "source_location": "L31"}
+  ],
+  "links": [
+    {"source": "users_createuser", "target": "users_saveuser", "relation": "calls", "confidence": "EXTRACTED", "context": "call"}
+  ]
+}
