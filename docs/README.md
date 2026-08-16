@@ -18,6 +18,8 @@ The [project README](../README.md) is the short introduction. These pages are th
   GraphQL: orphan-call and schema-drift.
 - **[graphify — the code layer](graphify.md)** — ingesting a code-symbol graph and querying it with
   `explain` and `path`.
+- **[Cross-service paths](cross-service.md)** — stitching two services' graphs across the network
+  boundary so `todo path` runs from a function in one to a function in the other.
 
 ## Install
 

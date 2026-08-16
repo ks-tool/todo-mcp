@@ -54,7 +54,7 @@ func graphqlEndpoints(src string) map[string]Endpoint {
 	out := map[string]Endpoint{}
 	for _, op := range []string{"Query", "Mutation", "Subscription"} {
 		for _, f := range types[op] {
-			e := Endpoint{Method: op, Path: f.name, Request: sortUniq(f.args), Response: fieldNames(f.ret)}
+			e := Endpoint{Method: op, Path: f.name, OpID: f.name, Request: sortUniq(f.args), Response: fieldNames(f.ret)}
 			out[e.key()] = e
 		}
 	}

@@ -949,6 +949,42 @@ the directory's name).`,
 	symbols.Flags().String("graph", "", "prebuilt graphify graph.json to ingest (skips running graphify)")
 	symbols.Flags().String("repo", "", "source label for the symbols (default: the directory's name)")
 
+	endpoints := &cobra.Command{
+		Use:   "endpoints <spec>",
+		Short: "ingest a service's API endpoints and bind them to code symbols",
+		Long: `Parse a service's spec (OpenAPI, AsyncAPI, gRPC .proto or GraphQL) and store its endpoints
+under --repo, binding each to the code symbol whose name matches its operationId (or rpc / field
+name). Two services' endpoints that share a method+path then connect across the network boundary, so
+'todo path' can cross from a function in one service to the handler in the other. Ingest each
+service's symbols first with 'todo symbols'.`,
+		Args: cobra.ExactArgs(1),
+		RunE: withStore(func(st *todo.Store, cmd *cobra.Command, args []string) error {
+			repo := reindexRepo(mustFlag(cmd, "repo"), ".")
+			eps, err := todo.SpecEndpoints(args[0])
+			if err != nil {
+				return err
+			}
+			rows := make([]todo.StoredEndpoint, 0, len(eps))
+			bound := 0
+			for _, e := range eps {
+				r := todo.StoredEndpoint{Repo: repo, Method: e.Method, Path: e.Path}
+				if len(e.OpID) > 0 {
+					if sym, ok, _ := st.FindSymbol(repo, e.OpID); ok {
+						r.Symbol = sym.SID
+						bound++
+					}
+				}
+				rows = append(rows, r)
+			}
+			if err := st.SetEndpoints(repo, rows); err != nil {
+				return err
+			}
+			fmt.Fprintf(os.Stderr, "ingested %d endpoints (%d bound to symbols) for %s\n", len(rows), bound, repo)
+			return nil
+		}),
+	}
+	endpoints.Flags().String("repo", "", "repo label whose symbols to bind (default: the directory's name)")
+
 	schema := &cobra.Command{
 		Use: "schema", Short: "the field and command contract, as JSON", Args: cobra.NoArgs,
 		Run: func(_ *cobra.Command, _ []string) { emitSchema() },
@@ -997,7 +1033,7 @@ The copy is then OPENED and counted, because a backup that cannot be read is not
 			return nil
 		}),
 	}
-	return []*cobra.Command{mcp, install, uninstall, reindex, symbols, schema, backup}
+	return []*cobra.Command{mcp, install, uninstall, reindex, symbols, endpoints, schema, backup}
 }
 
 // reindexRepo is the source label for a reindex: the given --repo, or the directory's own name when
@@ -1143,6 +1179,7 @@ func emitSchema() {
 			"sync-commits": "[--dir --rev] — scan git log for task ids",
 			"reindex":      "[--dir --rev --repo] — rebuild the derived trailer layer from git",
 			"symbols":      "<dir> [--graph --repo] — extract code symbols via graphify and ingest them",
+			"endpoints":    "<spec> [--repo] — ingest a service's API endpoints, bound to code symbols by operationId",
 			"path":         "<A> <B> [--epic --tag] — shortest chain of edges between two nodes",
 			"explain":      "<node> [--repo] — a code symbol's source, degree and connections",
 			"contract":     "<consumer-spec> <provider-spec> — check an API contract (OpenAPI, AsyncAPI, gRPC .proto, GraphQL SDL)",

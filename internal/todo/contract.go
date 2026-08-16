@@ -22,8 +22,23 @@ import (
 type Endpoint struct {
 	Method   string   `json:"method"`
 	Path     string   `json:"path"`
+	OpID     string   `json:"opId,omitempty"` // operationId / rpc name — binds the endpoint to a code symbol
 	Request  []string `json:"request"`
 	Response []string `json:"response"`
+}
+
+// SpecEndpoints reads a spec file and returns its endpoints as a slice — the exported view of the
+// per-format parsing, used to ingest a service's API surface into the graph.
+func SpecEndpoints(path string) ([]Endpoint, error) {
+	m, err := endpointsFromFile(path)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]Endpoint, 0, len(m))
+	for _, e := range m {
+		out = append(out, e)
+	}
+	return out, nil
 }
 
 func (e Endpoint) key() string { return e.Method + " " + e.Path }
@@ -148,6 +163,7 @@ type oaSpec struct {
 }
 
 type oaOp struct {
+	OperationID string            `json:"operationId"`
 	Parameters  []oaParam         `json:"parameters"`
 	RequestBody *oaBody           `json:"requestBody"`
 	Responses   map[string]oaBody `json:"responses"`
@@ -221,7 +237,7 @@ func endpoints(spec *oaSpec) map[string]Endpoint {
 	out := map[string]Endpoint{}
 	for path, ops := range spec.Paths {
 		for method, op := range ops {
-			e := Endpoint{Method: strings.ToUpper(method), Path: path}
+			e := Endpoint{Method: strings.ToUpper(method), Path: path, OpID: op.OperationID}
 			req := append([]string(nil), paramNames(op.Parameters)...)
 			req = append(req, bodyProps(op.RequestBody, spec.Components.Schemas)...)
 			e.Request = sortUniq(req)

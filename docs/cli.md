@@ -60,8 +60,10 @@ todo render team > tasks.md         # write one tag's slice back out, normalised
 todo reindex                        # rebuild the trailer (commit) layer from git, per repo
 todo path <A> <B>                   # shortest chain of edges between two nodes
 todo symbols <dir>                  # ingest a code-symbol graph via graphify (see graphify.md)
+todo endpoints <spec> --repo <r>    # ingest a service's API endpoints, bound to code symbols
 todo explain <node>                 # a symbol's source, degree and connections
 todo contract <consumer> <provider> # check an API contract (see contract.md)
+todo path serviceA:Fn serviceB:Fn   # a path across two services (see cross-service.md)
 ```
 
 ## Backup

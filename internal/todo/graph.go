@@ -43,7 +43,9 @@ const (
 	edgeParent = "parent" // trailer — trailer, git ancestry
 	edgeDep    = "dep"    // task — task, a dependency edge
 	edgeDoc    = "doc"    // task — doc / doc — doc, a wiki link
-	edgeFile   = "file"   // trailer — file (changed) / task — file (touchpoint)
+	edgeFile     = "file"     // trailer — file (changed) / task — file (touchpoint)
+	edgeEndpoint = "endpoint" // endpoint — symbol (the code that implements or calls it)
+	edgeBoundary = "boundary" // endpoint — endpoint across repos (a contract match; the network hop)
 )
 
 // Path resolves a and b to nodes and returns the shortest chain of edges between them. a and b are
@@ -281,7 +283,40 @@ func (s *Store) buildGraph(scope PathScope) (*graph, error) {
 				PathNode{Kind: KindSymbol, ID: e.Target, Label: e.Target}, e.Relation)
 		}
 	}
+
+	// endpoint layer — the network boundary. An endpoint binds to the symbol that implements or calls
+	// it (via operationId); two endpoints with the same method+path in different repos are a contract
+	// match, the edge a path crosses from one service into another. So a path runs: function → the
+	// call/handler symbol → its endpoint → (boundary) → the other service's endpoint → its symbol.
+	eps, err := s.endpointsScoped(scope.Epic)
+	if err != nil {
+		return nil, err
+	}
+	byKey := map[string][]StoredEndpoint{}
+	for _, e := range eps {
+		g.ensure(endpointNode(e))
+		byKey[e.Method+" "+e.Path] = append(byKey[e.Method+" "+e.Path], e)
+		if len(e.Symbol) > 0 && symIn[e.Symbol] {
+			g.link(endpointNode(e), PathNode{Kind: KindSymbol, ID: e.Symbol}, edgeEndpoint)
+		}
+	}
+	for _, group := range byKey {
+		for i := range group {
+			for j := i + 1; j < len(group); j++ {
+				if group[i].Repo != group[j].Repo {
+					g.link(endpointNode(group[i]), endpointNode(group[j]), edgeBoundary)
+				}
+			}
+		}
+	}
 	return g, nil
+}
+
+const KindEndpoint = "endpoint"
+
+func endpointNode(e StoredEndpoint) PathNode {
+	return PathNode{Kind: KindEndpoint, ID: e.Repo + ":" + e.Method + " " + e.Path,
+		Label: e.Method + " " + e.Path + " (" + e.Repo + ")"}
 }
 
 const (
@@ -347,6 +382,17 @@ func (s *Store) resolveNode(ref string) (PathNode, bool, error) {
 		return PathNode{}, false, err
 	} else if ok {
 		return fileNode(ref), true, nil
+	}
+	// A repo-qualified symbol — `repo:name`, how you address one of two services' symbols by name
+	// when both are in the database. The ':' is distinctive (ids, shas, paths carry none), and an
+	// inner ':' in the name reads as a package dot (`svc:pkg:Fn` → pkg.Fn in svc).
+	if i := strings.IndexByte(ref, ':'); i > 0 {
+		repo, name := ref[:i], strings.ReplaceAll(ref[i+1:], ":", ".")
+		if sym, ok, err := s.FindSymbol(repo, name); err != nil {
+			return PathNode{}, false, err
+		} else if ok {
+			return symbolNode(sym), true, nil
+		}
 	}
 	// An exact symbol: the id, the whole label, or the callable name — plain `name()`, a method
 	// `.name()`, or a qualified `Type.name()`. All anchored (never a loose substring), so a fuzzy

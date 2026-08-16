@@ -45,7 +45,7 @@ func protoEndpoints(src string) map[string]Endpoint {
 	for _, s := range reProtoService.FindAllStringSubmatch(src, -1) {
 		service := s[1]
 		for _, r := range reProtoRPC.FindAllStringSubmatch(s[2], -1) {
-			e := Endpoint{Method: "RPC", Path: service + "/" + r[1],
+			e := Endpoint{Method: "RPC", Path: service + "/" + r[1], OpID: r[1],
 				Request: msg[shortType(r[2])], Response: msg[shortType(r[3])]}
 			out[e.key()] = e
 		}

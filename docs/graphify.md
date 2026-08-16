@@ -56,6 +56,9 @@ trailer  "graphify: symbols and code edges join the path graph"
 name, or — failing those — a full-text phrase, and returns the shortest chain of edges between them.
 `--epic` / `--tag` scope which nodes take part.
 
+A path can also cross the network boundary **between two services** — from a function in one, through
+the call it makes, to the handler in the other — see [cross-service paths](cross-service.md).
+
 ## Community
 
 After each ingest, label propagation over the code edges clusters the symbols into communities (no

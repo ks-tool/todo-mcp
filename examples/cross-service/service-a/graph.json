@@ -1,0 +1,9 @@
+{
+  "nodes": [
+    {"id": "orders_place", "label": "PlaceOrder()", "file_type": "code", "source_file": "orders/service.go", "source_location": "L20"},
+    {"id": "orders_usersclient_create", "label": "createUser()", "file_type": "code", "source_file": "orders/usersclient.go", "source_location": "L8"}
+  ],
+  "links": [
+    {"source": "orders_place", "target": "orders_usersclient_create", "relation": "calls", "confidence": "EXTRACTED", "context": "call"}
+  ]
+}

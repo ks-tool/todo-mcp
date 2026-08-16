@@ -167,6 +167,19 @@ CREATE TABLE IF NOT EXISTS symbol_edges (
 );
 CREATE INDEX IF NOT EXISTS symbol_edges_by_target ON symbol_edges(repo, target);
 
+-- API endpoints per service, the bridge across the network boundary: each (repo, method, path) may
+-- bind to the code symbol that implements or calls it (via the spec's operationId). Two endpoints
+-- with the same method+path in different repos are a contract match — the edge a path crosses from
+-- one service into another.
+CREATE TABLE IF NOT EXISTS endpoints (
+    repo   TEXT NOT NULL,
+    method TEXT NOT NULL,
+    path   TEXT NOT NULL,
+    symbol TEXT NOT NULL DEFAULT '',
+    PRIMARY KEY (repo, method, path)
+);
+CREATE INDEX IF NOT EXISTS endpoints_by_key ON endpoints(method, path);
+
 -- The trailer→epic binding is AUTHORED, not derived: it is the local decision to file a commit from
 -- the history under one of your own epics, and it must survive the reindex that rebuilds the trailer
 -- cache. So it lives in its own table, keyed by sha, and reindex never touches it. Epics are local —
