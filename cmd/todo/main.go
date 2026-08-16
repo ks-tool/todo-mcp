@@ -12,6 +12,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"text/tabwriter"
 	"time"
@@ -53,10 +54,114 @@ Output is a table at a terminal, JSON Lines into a pipe or under --json. Exit: 0
 
 	root.AddCommand(taskCommands()...)
 	root.AddCommand(wikiCommands()...)
+	root.AddCommand(commentCommands()...)
 	root.AddCommand(trailerCommands()...)
 	root.AddCommand(pathCommand())
 	root.AddCommand(frontCommands()...)
 	return root
+}
+
+// commentCommands are a task's comment thread: many timestamped entries, no author, soft-deleted
+// like everything else. Separate from `note`, which sets the single done_note annotation.
+func commentCommands() []*cobra.Command {
+	comment := &cobra.Command{Use: "comment", Short: "a task's comment thread (timestamped, no author)"}
+
+	add := &cobra.Command{
+		Use: "add <task-id> [text...]", Short: "append a comment to a task's thread", Args: cobra.MinimumNArgs(1),
+		RunE: withStore(func(st *todo.Store, cmd *cobra.Command, args []string) error {
+			text := mustFlag(cmd, "text")
+			if len(text) == 0 && len(args) > 1 {
+				text = strings.Join(args[1:], " ")
+			}
+			if len(strings.TrimSpace(text)) == 0 {
+				return fmt.Errorf("a comment needs text")
+			}
+			id, err := st.AddComment(args[0], text, time.Now().Format(time.RFC3339))
+			if err != nil {
+				return err
+			}
+			fmt.Fprintf(os.Stderr, "added comment %d to %s\n", id, args[0])
+			fmt.Println(id)
+			return nil
+		}),
+	}
+	add.Flags().String("text", "", "the comment (or pass it as trailing words)")
+
+	list := &cobra.Command{
+		Use: "list <task-id>", Short: "the task's thread, oldest first", Args: cobra.ExactArgs(1),
+		RunE: withStore(func(st *todo.Store, _ *cobra.Command, args []string) error {
+			cs, err := st.Comments(args[0])
+			if err != nil {
+				return err
+			}
+			if jsonOut() {
+				enc := json.NewEncoder(os.Stdout)
+				for _, c := range cs {
+					_ = enc.Encode(c)
+				}
+				if len(cs) == 0 {
+					os.Exit(2)
+				}
+				return nil
+			}
+			if len(cs) == 0 {
+				fmt.Fprintln(os.Stderr, "(none)")
+				os.Exit(2)
+			}
+			for _, c := range cs {
+				fmt.Printf("%-6d  %-16s  %s\n", c.ID, whenShort(c.At), oneLine(c.Text, 80))
+			}
+			return nil
+		}),
+	}
+
+	edit := &cobra.Command{
+		Use: "edit <comment-id> [text...]", Short: "rewrite a comment", Args: cobra.MinimumNArgs(1),
+		RunE: withStore(func(st *todo.Store, cmd *cobra.Command, args []string) error {
+			id, err := strconv.ParseInt(args[0], 10, 64)
+			if err != nil {
+				return fmt.Errorf("comment id must be a number: %s", args[0])
+			}
+			text := mustFlag(cmd, "text")
+			if len(text) == 0 && len(args) > 1 {
+				text = strings.Join(args[1:], " ")
+			}
+			ok, err := st.EditComment(id, text)
+			if err != nil {
+				return err
+			}
+			if !ok {
+				fmt.Fprintf(os.Stderr, "no such comment: %d\n", id)
+				os.Exit(2)
+			}
+			fmt.Fprintf(os.Stderr, "comment %d updated\n", id)
+			return nil
+		}),
+	}
+	edit.Flags().String("text", "", "the new comment (or pass it as trailing words)")
+
+	rm := &cobra.Command{
+		Use: "rm <comment-id>", Short: "soft-delete a comment", Args: cobra.ExactArgs(1),
+		RunE: withStore(func(st *todo.Store, _ *cobra.Command, args []string) error {
+			id, err := strconv.ParseInt(args[0], 10, 64)
+			if err != nil {
+				return fmt.Errorf("comment id must be a number: %s", args[0])
+			}
+			ok, err := st.DeleteComment(id, time.Now().Format(time.RFC3339))
+			if err != nil {
+				return err
+			}
+			if !ok {
+				fmt.Fprintf(os.Stderr, "no such comment: %d\n", id)
+				os.Exit(2)
+			}
+			fmt.Fprintf(os.Stderr, "comment %d deleted\n", id)
+			return nil
+		}),
+	}
+
+	comment.AddCommand(add, list, edit, rm)
+	return []*cobra.Command{comment}
 }
 
 // pathCommand walks the graph: the shortest chain of edges between two nodes, which is how a person
@@ -905,10 +1010,11 @@ func emitSchema() {
 			"ready": "open tasks with all deps done", "next": "the top ready task",
 			"show": "<id> — one task", "impact": "<id> — tasks depending on it",
 			"stats": "counts per epic", "done": "<id>", "reopen": "<id>",
-			"add":  "[--epic <e>] [--tags --priority --slug --touch --dep] <text> — epic defaults to the first of $TODO_EPICS",
-			"edit": "<id> [--priority --epic --slug --text --dep --status]",
-			"note": "<id> [text] — set/edit a task comment; works on a done task, no reopen",
-			"dep":  "<id> <depends-on-id> [--del]", "suggest": "<id> [--apply]",
+			"add":     "[--epic <e>] [--tags --priority --slug --touch --dep] <text> — epic defaults to the first of $TODO_EPICS",
+			"edit":    "<id> [--priority --epic --slug --text --dep --status]",
+			"note":    "<id> [text] — set/edit the single done_note annotation; no reopen",
+			"comment": "add|list|edit|rm — a task's comment thread (timestamped, no author)",
+			"dep":     "<id> <depends-on-id> [--del]", "suggest": "<id> [--apply]",
 			"delete": "<id> — soft-delete to trash", "restore": "<id>", "trash": "the soft-deleted",
 			"render": "[tag] — rebuild markdown to stdout",
 			"backup": "[dir-or-file] — verified VACUUM INTO snapshot; never overwrites",

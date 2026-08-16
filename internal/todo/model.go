@@ -93,6 +93,17 @@ const (
 	LinkURL    = "url"
 )
 
+// Comment is one entry in a task's comment thread: a timestamp and text, and nothing more. There is
+// deliberately NO author — the backlog has no notion of a user, and the work is distributed (each
+// maintainer keeps their own database), so authorship would be meaningless. A thread accretes many
+// comments over a task's life, oldest first; each keeps its own id so it can be edited or removed.
+type Comment struct {
+	ID     int64  `json:"id"`
+	TaskID string `json:"taskId"`
+	At     string `json:"at"` // RFC3339, supplied by the caller — the store stays clock-free
+	Text   string `json:"text"`
+}
+
 // rankOf turns a priority label into a sort key. Lower is more urgent. Everything the grammar uses
 // maps onto one line; an unknown label sorts last rather than crashing, because a backlog with a
 // typo in it is still a backlog you want to read.

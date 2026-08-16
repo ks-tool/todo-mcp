@@ -726,6 +726,13 @@ func (m *tui) detailContent() string {
 		writeln("  " + t.DoneNote)
 		writeln("")
 	}
+	if comments, _ := m.store.Comments(t.ID); len(comments) > 0 {
+		writeln(stSect.Render("comments"))
+		for _, c := range comments {
+			writeln("  " + stDim.Render(whenShort(c.At)) + "  " + oneLine(c.Text, 60))
+		}
+		writeln("")
+	}
 	if len(t.DependsOn) > 0 {
 		writeln(stSect.Render("blocked by"))
 		for _, depID := range t.DependsOn {

@@ -2,6 +2,7 @@ package main
 
 import (
 	"strings"
+	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/huh"
@@ -236,15 +237,19 @@ func (m *tui) openDocForm(d *todo.Doc) tea.Cmd {
 	})
 }
 
-// openCommentForm edits a task's comment (its done_note). It works on a DONE task without reopening
-// it — SetNote never touches status — so a note can be added or corrected after the work shipped.
+// openCommentForm appends a comment to a task's thread. It works on a DONE task without reopening it
+// — a comment is not a state change — and each press adds a new entry rather than overwriting; the
+// thread is the running discussion, kept apart from the single done_note annotation.
 func (m *tui) openCommentForm(t todo.Task) tea.Cmd {
-	note := t.DoneNote
+	var text string
 	f := huh.NewForm(huh.NewGroup(
-		huh.NewText().Title("comment → " + t.ID).Value(&note).Lines(6),
+		huh.NewText().Title("new comment → " + t.ID).Value(&text).Lines(6),
 	))
 	return m.openForm(f, func() {
-		if _, err := m.store.SetNote(t.ID, note); err != nil {
+		if len(strings.TrimSpace(text)) == 0 {
+			return
+		}
+		if _, err := m.store.AddComment(t.ID, text, time.Now().Format(time.RFC3339)); err != nil {
 			m.flash = err.Error()
 		}
 	})

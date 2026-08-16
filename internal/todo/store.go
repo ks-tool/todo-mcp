@@ -59,6 +59,19 @@ CREATE INDEX IF NOT EXISTS tasks_by_status   ON tasks(status);
 CREATE INDEX IF NOT EXISTS tasks_by_epic     ON tasks(epic);
 CREATE INDEX IF NOT EXISTS tasks_by_rank     ON tasks(rank);
 
+-- A task's comment thread: many timestamped entries, authored (persistent, reindex never touches
+-- it), soft-deleted like tasks and docs. No author column — the backlog has no user identity and the
+-- work is distributed, so authorship would be meaningless. The time is supplied by the caller, so
+-- the store stays clock-free.
+CREATE TABLE IF NOT EXISTS comments (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    task_id    TEXT NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+    at         TEXT NOT NULL DEFAULT '',
+    text       TEXT NOT NULL,
+    deleted_at TEXT NOT NULL DEFAULT ''
+);
+CREATE INDEX IF NOT EXISTS comments_by_task ON comments(task_id);
+
 CREATE TABLE IF NOT EXISTS deps (
     task_id    TEXT NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
     depends_on TEXT NOT NULL,

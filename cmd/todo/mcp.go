@@ -63,13 +63,17 @@ func runMCP(st *todo.Store) error {
 			return result(1), taskOut{Task: &ts[0]}, nil
 		})
 
-	mcp.AddTool(s, &mcp.Tool{Name: "todo_show", Description: "One task in full, by id."},
+	mcp.AddTool(s, &mcp.Tool{Name: "todo_show", Description: "One task in full, by id, with its comment thread."},
 		func(_ context.Context, _ *mcp.CallToolRequest, in idIn) (*mcp.CallToolResult, taskOut, error) {
 			t, ok, err := st.Get(in.ID)
 			if err != nil || !ok {
 				return notFound(in.ID), taskOut{}, err
 			}
-			return result(1), taskOut{Task: &t}, nil
+			cs, err := st.Comments(in.ID)
+			if err != nil {
+				return result(0), taskOut{}, err
+			}
+			return result(1), taskOut{Task: &t, Comments: cs}, nil
 		})
 
 	mcp.AddTool(s, &mcp.Tool{Name: "todo_impact", Description: "Open tasks that directly depend on the given id — what unblocks if it is done."},
@@ -314,10 +318,39 @@ func runMCP(st *todo.Store) error {
 		})
 
 	mcp.AddTool(s, &mcp.Tool{Name: "todo_note",
-		Description: "Set or edit a task's comment (the done_note) WITHOUT changing its status — so a comment can be added or corrected after a task is done, with no reopen. An empty note clears it."},
+		Description: "Set or edit a task's single done_note (the closing annotation from the import grammar) WITHOUT changing its status. For an ongoing discussion use the comment thread (comment_add) instead; an empty note clears it."},
 		func(_ context.Context, _ *mcp.CallToolRequest, in noteIn) (*mcp.CallToolResult, okOut, error) {
 			ok, err := st.SetNote(in.ID, in.Note)
 			return okResult(ok, in.ID), okOut{OK: ok}, err
+		})
+
+	mcp.AddTool(s, &mcp.Tool{Name: "comment_add",
+		Description: "Append a comment to a task's thread — many timestamped entries, no author. Works on a done task without reopening. Returns the new comment with its id."},
+		func(_ context.Context, _ *mcp.CallToolRequest, in commentAddIn) (*mcp.CallToolResult, commentOut, error) {
+			at := time.Now().Format(time.RFC3339)
+			id, err := st.AddComment(in.TaskID, in.Text, at)
+			if err != nil {
+				return errText(err.Error()), commentOut{}, nil
+			}
+			return textResult("added comment"), commentOut{Comment: &todo.Comment{ID: id, TaskID: in.TaskID, At: at, Text: in.Text}}, nil
+		})
+
+	mcp.AddTool(s, &mcp.Tool{Name: "comment_list", Description: "A task's comment thread, oldest first."},
+		func(_ context.Context, _ *mcp.CallToolRequest, in taskIDIn) (*mcp.CallToolResult, commentsOut, error) {
+			cs, err := st.Comments(in.TaskID)
+			return result(len(cs)), commentsOut{Comments: cs}, err
+		})
+
+	mcp.AddTool(s, &mcp.Tool{Name: "comment_edit", Description: "Rewrite one comment's text, by id."},
+		func(_ context.Context, _ *mcp.CallToolRequest, in commentEditIn) (*mcp.CallToolResult, okOut, error) {
+			ok, err := st.EditComment(in.ID, in.Text)
+			return okResultN(ok, in.ID), okOut{OK: ok}, err
+		})
+
+	mcp.AddTool(s, &mcp.Tool{Name: "comment_delete", Description: "Soft-delete one comment, by id."},
+		func(_ context.Context, _ *mcp.CallToolRequest, in commentIDIn) (*mcp.CallToolResult, okOut, error) {
+			ok, err := st.DeleteComment(in.ID, time.Now().Format(time.RFC3339))
+			return okResultN(ok, in.ID), okOut{OK: ok}, err
 		})
 
 	mcp.AddTool(s, &mcp.Tool{Name: "task_commits", Description: "The commits recorded against a task."},
@@ -456,6 +489,23 @@ type noteIn struct {
 	ID   string `json:"id"`
 	Note string `json:"note"`
 }
+type commentAddIn struct {
+	TaskID string `json:"taskId"`
+	Text   string `json:"text"`
+}
+type commentEditIn struct {
+	ID   int64  `json:"id"`
+	Text string `json:"text"`
+}
+type commentIDIn struct {
+	ID int64 `json:"id"`
+}
+type commentOut struct {
+	Comment *todo.Comment `json:"comment,omitempty"`
+}
+type commentsOut struct {
+	Comments []todo.Comment `json:"comments"`
+}
 type syncIn struct {
 	Dir string `json:"dir,omitempty"`
 	Rev string `json:"rev,omitempty"`
@@ -513,7 +563,8 @@ type tasksOut struct {
 	Tasks []todo.Task `json:"tasks"`
 }
 type taskOut struct {
-	Task *todo.Task `json:"task,omitempty"`
+	Task     *todo.Task     `json:"task,omitempty"`
+	Comments []todo.Comment `json:"comments,omitempty"`
 }
 type statsOut struct {
 	Stats []todo.Stat `json:"stats"`
@@ -541,6 +592,13 @@ func textResult(msg string) *mcp.CallToolResult {
 func okResult(ok bool, id string) *mcp.CallToolResult {
 	if !ok {
 		return notFound(id)
+	}
+	return textResult("ok")
+}
+
+func okResultN(ok bool, id int64) *mcp.CallToolResult {
+	if !ok {
+		return errText(fmt.Sprintf("no such comment: %d", id))
 	}
 	return textResult("ok")
 }

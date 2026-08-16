@@ -151,6 +151,24 @@ func TestEditFormEpicReadOnly(t *testing.T) {
 	}
 }
 
+// TestCommentThreadInDetail covers todomcp-14's TUI side: the detail pane shows a task's comment
+// thread, and pressing 'm' opens the add-comment modal.
+func TestCommentThreadInDetail(t *testing.T) {
+	m := tuiWith(t, todo.Task{ID: "c-01", Epic: "c", Status: todo.StatusOpen, Text: "x"})
+	if _, err := m.store.AddComment("c-01", "a threaded remark", "2026-08-16T10:00:00Z"); err != nil {
+		t.Fatal(err)
+	}
+	m.reload()
+	body := m.detailContent()
+	if !strings.Contains(body, "comments") || !strings.Contains(body, "a threaded remark") {
+		t.Errorf("detail pane must show the comment thread:\n%s", body)
+	}
+	m.Update(key("m"))
+	if m.focus != focusForm || m.form == nil {
+		t.Errorf("m must open the add-comment modal; focus=%v", m.focus)
+	}
+}
+
 // TestEpicField covers todomcp-09: the epic is chosen from the ones that exist, with a sentinel to
 // create a new one; the current epic pre-selects, a new task defaults to the first existing epic,
 // and an epic not yet in the backlog is added as its own option so it can still be shown.
