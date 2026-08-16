@@ -18,18 +18,33 @@ the terminal width, so it never wraps.
 
 ### List
 
-- `↑` / `↓` — move · `Enter` / `e` — edit · `a` — add · `d` — delete (to trash)
-- `c` — record a commit · `m` — add a comment · `l` — link a doc
-- `/` — full-text search · `f` — filter by tag · `p` — filter by epic · `s` — cycle status
-- `t` — trash view · `ctrl+r` — refresh (pull in tasks added elsewhere)
+- `↑` / `↓` — move
+- `Enter` / `e` — edit
+- `a` — add
+- `d` — delete (to trash)
+- `c` — record a commit
+- `m` — add a comment
+- `l` — link a doc
+- `/` — full-text search
+- `f` — filter by tag
+- `p` — filter by epic
+- `s` — cycle status
+- `t` — trash view
+- `ctrl+r` — refresh (pull in tasks added elsewhere)
 - `1`–`4` — sort by that column (repeat flips direction, `0` restores the store's order)
-- `v` — full-screen view · `Tab` — focus the detail · `w` — backlog ⇄ wiki
+- `v` — full-screen view
+- `Tab` — focus the detail
+- `w` — backlog ⇄ wiki
 - `x` — export the current view to markdown (`backlog.md` / `wiki.md`)
-- `?` — the full key help · `q` — quit
+- `?` — the full key help
+- `q` — quit
 
 ### Detail (`Tab`)
 
-- `↑` / `↓` — scroll · `n` / `p` — walk links · `Enter` — follow · `Tab` / `Esc` — back
+- `↑` / `↓` — scroll
+- `n` / `p` — walk links
+- `Enter` — follow
+- `Tab` / `Esc` — back
 
 ### Modals
 
@@ -37,7 +52,7 @@ the terminal width, so it never wraps.
 
 ### Trash (`t`)
 
-- `r` — restore the selected task.
+- `r` — restore the selected task
 
 ## Filters
 
