@@ -11,6 +11,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -824,6 +825,34 @@ hand after a fetch. --repo labels the source (default: the directory's name).`,
 	reindex.Flags().String("rev", "main", "the ref or range to read")
 	reindex.Flags().String("repo", "", "source label for the trailers (default: the directory's name)")
 
+	symbols := &cobra.Command{
+		Use:   "symbols <dir>",
+		Short: "extract code symbols with graphify and ingest them (per repo)",
+		Long: `Run graphify's extractor on the repo — or ingest a prebuilt graph.json with --graph — and load
+its symbol nodes into the backlog, scoped by repo, so code symbols join the graph the tasks and
+commits live in. Needs graphify on PATH unless --graph is given. --repo labels the source (default:
+the directory's name).`,
+		Args: cobra.ExactArgs(1),
+		RunE: withStore(func(st *todo.Store, cmd *cobra.Command, args []string) error {
+			dir := args[0]
+			graph := mustFlag(cmd, "graph")
+			if len(graph) == 0 {
+				if err := exec.Command("graphify", "update", dir, "--no-cluster").Run(); err != nil {
+					return fmt.Errorf("run graphify update (or pass --graph <graph.json>): %w", err)
+				}
+				graph = filepath.Join(dir, "graphify-out", "graph.json")
+			}
+			n, err := st.IngestGraph(reindexRepo(mustFlag(cmd, "repo"), dir), graph)
+			if err != nil {
+				return err
+			}
+			fmt.Fprintf(os.Stderr, "ingested %d symbols\n", n)
+			return nil
+		}),
+	}
+	symbols.Flags().String("graph", "", "prebuilt graphify graph.json to ingest (skips running graphify)")
+	symbols.Flags().String("repo", "", "source label for the symbols (default: the directory's name)")
+
 	schema := &cobra.Command{
 		Use: "schema", Short: "the field and command contract, as JSON", Args: cobra.NoArgs,
 		Run: func(_ *cobra.Command, _ []string) { emitSchema() },
@@ -872,7 +901,7 @@ The copy is then OPENED and counted, because a backup that cannot be read is not
 			return nil
 		}),
 	}
-	return []*cobra.Command{mcp, install, uninstall, reindex, schema, backup}
+	return []*cobra.Command{mcp, install, uninstall, reindex, symbols, schema, backup}
 }
 
 // reindexRepo is the source label for a reindex: the given --repo, or the directory's own name when
@@ -1023,6 +1052,7 @@ func emitSchema() {
 			"commit": "<task> <sha> [--del] — record/unlink a commit; a foreign sha is refused", "commits": "<task>",
 			"sync-commits": "[--dir --rev] — scan git log for task ids",
 			"reindex":      "[--dir --rev --repo] — rebuild the derived trailer layer from git",
+			"symbols":      "<dir> [--graph --repo] — extract code symbols via graphify and ingest them",
 			"trailer":      "bind|epic|list — the git commits reindex projects into the graph",
 		},
 		"output": "JSON Lines under --json or into a pipe; exit 0 found / 2 empty / 1 error",

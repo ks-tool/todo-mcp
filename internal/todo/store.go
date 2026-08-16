@@ -138,6 +138,20 @@ CREATE TABLE IF NOT EXISTS trailer_files (
 );
 CREATE INDEX IF NOT EXISTS trailer_files_by_path ON trailer_files(path);
 
+-- The symbol layer, also derived: code nodes ingested from graphify's graph.json (classes, funcs,
+-- files, packages), scoped by repo and rebuilt on each ingest. They join the same database as the
+-- tasks and trailers, bridged to them by source file, so a path can cross from intent to code.
+CREATE TABLE IF NOT EXISTS symbols (
+    repo  TEXT NOT NULL,
+    sid   TEXT NOT NULL,             -- graphify node id, unique within a repo's graph
+    label TEXT NOT NULL DEFAULT '',
+    kind  TEXT NOT NULL DEFAULT '',  -- file | func | package | doc | symbol
+    file  TEXT NOT NULL DEFAULT '',
+    line  TEXT NOT NULL DEFAULT '',
+    PRIMARY KEY (repo, sid)
+);
+CREATE INDEX IF NOT EXISTS symbols_by_file ON symbols(repo, file);
+
 -- The trailer→epic binding is AUTHORED, not derived: it is the local decision to file a commit from
 -- the history under one of your own epics, and it must survive the reindex that rebuilds the trailer
 -- cache. So it lives in its own table, keyed by sha, and reindex never touches it. Epics are local —

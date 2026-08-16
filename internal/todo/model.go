@@ -61,6 +61,18 @@ type Trailer struct {
 	At      string   `json:"at,omitempty"`      // committer date, ISO 8601
 }
 
+// Symbol is a code node ingested from graphify's extraction: a class, function, file or package,
+// with where it lives in the source. It is derived (rebuilt per repo on each ingest) and joins the
+// same graph as the tasks and trailers, bridged by File to the provenance side.
+type Symbol struct {
+	Repo  string `json:"repo"`
+	SID   string `json:"sid"` // graphify node id
+	Label string `json:"label"`
+	Kind  string `json:"kind"` // file | func | package | doc | symbol
+	File  string `json:"file"`
+	Line  string `json:"line"`
+}
+
 // Doc is a wiki page: a title, a stable path, a kind, and a markdown body. The path may carry ONE
 // level of hierarchy — "<section>/<page>", e.g. threat-model/02-node — where "<section>/README" is
 // the section's index and the pages beside it stay flat: a section groups pages that together
