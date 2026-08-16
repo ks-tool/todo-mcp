@@ -108,8 +108,9 @@ func runUninstall(dir, instructions string) error {
 
 // The agent-facing instructions install maintains in CLAUDE.md, between markers it owns. The MCP
 // tools already self-describe over the protocol, so this stays short: what lives here, which way to
-// reach it, and the two conventions the schema cannot say — this project's epics by name, and what
-// tags are for.
+// reach it (MCP over the CLI, and narrowly, since an unfiltered read is pure token cost), and the
+// conventions the schema cannot say — the default epics, how to find the ones that hold work, and
+// what tags are for.
 const (
 	blockBegin = "<!-- todo-mcp:begin -->"
 	blockEnd   = "<!-- todo-mcp:end -->"
@@ -117,19 +118,31 @@ const (
 
 func claudeBlock(epics []string) string {
 	list := "`" + strings.Join(epics, "`, `") + "`"
-	where := "This project's epics are " + list + " — an add without an epic lands in `" + epics[0] + "`"
+	where := "The configured default epics are " + list + " — a bare `todo_add` lands in `" + epics[0] + "`"
 	if len(epics) == 1 {
-		where = "This project's tasks live under the " + list + " epic — an add without an epic lands there"
+		where = "Tasks land under the " + list + " epic by default — a bare `todo_add` goes there"
 	}
 	return blockBegin + `
 ## backlog + wiki — the todo tool
 
-The project's tasks and design docs live in one SQLite backlog served by the ` + "`todo`" + ` MCP server
-(wired in ` + "`.mcp.json`" + `). Prefer the MCP tools (` + "`todo_list`, `todo_ready`, `doc_list`, `doc_show`" + `,
-...) — they return structured data; the ` + "`todo`" + ` CLI answers the same questions in a shell
-(` + "`todo ready`, `todo doc list --search <q>`, `todo docs <task-id>`" + `). ` + where + `, and epics
-outside this list are other projects. TAGS are free labels for slicing, and the ` + "`tag`" + ` filter
-takes a comma list a task must carry all of (` + "`todo_list {tag: \"ee,scheduler\"}`" + `).
+Tasks and design docs live in one SQLite backlog served by the ` + "`todo`" + ` MCP server
+(` + "`.mcp.json`" + `), shared across projects. **Use the MCP tools, not the ` + "`todo`" + ` CLI** —
+MCP returns compact JSON; the CLI spawns a process and prints verbose text (human fallback:
+` + "`todo ready`, `todo doc list --search <q>`, `todo docs <task-id>`" + `).
+
+**Query narrow — the backlog is large; an unfiltered read wastes tokens.** Pick work with
+` + "`todo_ready {tag}`" + ` / ` + "`todo_next`" + `, or ` + "`todo_list`" + ` under a filter
+(` + "`epic`, `tag`, `status`, `search`, `priority`" + `); add ` + "`all:true`" + ` only for done+open.
+One task → ` + "`todo_show <id>`" + `, not list-and-scan. Docs: ` + "`doc_list {search|section}`" + ` is
+metadata only (cheap) — locate first, then ` + "`doc_show <id>`" + ` for the ONE body you need; design
+docs are long, never open several on spec. Don't re-query what is already in context.
+
+**Epics — discover with ` + "`todo_stats`" + `, don't assume.** ` + where + `, but tasks may also live
+under other epics — run ` + "`todo_stats`" + ` for the ones that actually hold work. The ` + "`epic`" + `
+filter is a case-insensitive substring (so a short string matches every epic containing it); nested
+epics use a path (` + "`parent/child`" + `); other projects can share this database. Name an epic
+explicitly on every ` + "`todo_add`" + `. TAGS are cross-cutting labels; the ` + "`tag`" + ` filter is
+AND over a comma list (` + "`todo_list {tag: \"a,b\"}`" + `).
 
 **Every new task: 2–3 tags, and report its id.** When you create a task, give it two or three
 relevant tags so it can later be found by slice, and hand the id ` + "`todo_add`" + ` mints back to the
