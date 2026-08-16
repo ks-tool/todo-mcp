@@ -255,12 +255,44 @@ func (s *Store) buildGraph(scope PathScope) (*graph, error) {
 			g.link(taskNode(t), fileNode(f), edgeFile)
 		}
 	}
+
+	// symbol layer: the ingested graphify graph. Symbol nodes bridge to the provenance side at the
+	// FILE level — a symbol's source file is a file a commit touched — so a path can run
+	// task → commit → file → symbol → symbol. Code edges keep graphify's relation as the edge kind.
+	syms, err := s.symbolsScoped(scope.Epic)
+	if err != nil {
+		return nil, err
+	}
+	symIn := map[string]bool{}
+	for _, sym := range syms {
+		g.ensure(symbolNode(sym))
+		symIn[sym.SID] = true
+		if len(sym.File) > 0 {
+			g.link(symbolNode(sym), fileNode(sym.File), edgeFile)
+		}
+	}
+	sedges, err := s.symbolEdgesScoped(scope.Epic)
+	if err != nil {
+		return nil, err
+	}
+	for _, e := range sedges {
+		if symIn[e.Source] && symIn[e.Target] {
+			g.link(PathNode{Kind: KindSymbol, ID: e.Source, Label: e.Source},
+				PathNode{Kind: KindSymbol, ID: e.Target, Label: e.Target}, e.Relation)
+		}
+	}
 	return g, nil
 }
 
-const KindFile = "file"
+const (
+	KindFile   = "file"
+	KindSymbol = "symbol"
+)
 
 func fileNode(path string) PathNode { return PathNode{Kind: KindFile, ID: path, Label: path} }
+func symbolNode(sym Symbol) PathNode {
+	return PathNode{Kind: KindSymbol, ID: sym.SID, Label: sym.Label}
+}
 
 // linkDoc joins a source node to a doc by id, materializing the doc node from the store so it reads
 // by its title.
@@ -315,6 +347,13 @@ func (s *Store) resolveNode(ref string) (PathNode, bool, error) {
 		return PathNode{}, false, err
 	} else if ok {
 		return fileNode(ref), true, nil
+	}
+	// An exact symbol id or label (with or without "()") — but not a substring, so a fuzzy phrase
+	// still falls through to full-text rather than latching onto a coincidental symbol name.
+	if ss, err := s.scanSymbols(`WHERE sid = ? OR lower(label) = lower(?) OR lower(label) = lower(?) LIMIT 1`, ref, ref, ref+"()"); err != nil {
+		return PathNode{}, false, err
+	} else if len(ss) > 0 {
+		return symbolNode(ss[0]), true, nil
 	}
 	return s.resolveByText(ref)
 }

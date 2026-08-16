@@ -164,8 +164,26 @@ func (s *Store) Explain(repo, query string) (*SymbolExplain, bool, error) {
 // SymbolEdges returns every edge touching sid in a repo — out of it or into it — which is a node's
 // neighbourhood for an explain view.
 func (s *Store) SymbolEdges(repo, sid string) ([]SymbolEdge, error) {
-	rows, err := s.db.Query(`SELECT repo, source, target, relation, confidence, context
-FROM symbol_edges WHERE repo = ? AND (source = ? OR target = ?) ORDER BY relation, target`, repo, sid, sid)
+	return s.scanSymbolEdges(`WHERE repo = ? AND (source = ? OR target = ?) ORDER BY relation, target`, repo, sid, sid)
+}
+
+// symbolsScoped and symbolEdgesScoped feed the path graph: a repo when the scope names one, else all.
+func (s *Store) symbolsScoped(repo string) ([]Symbol, error) {
+	if len(repo) > 0 {
+		return s.scanSymbols(`WHERE repo = ? ORDER BY file, line`, repo)
+	}
+	return s.scanSymbols(`ORDER BY file, line`)
+}
+
+func (s *Store) symbolEdgesScoped(repo string) ([]SymbolEdge, error) {
+	if len(repo) > 0 {
+		return s.scanSymbolEdges(`WHERE repo = ? ORDER BY source`, repo)
+	}
+	return s.scanSymbolEdges(`ORDER BY source`)
+}
+
+func (s *Store) scanSymbolEdges(where string, args ...any) ([]SymbolEdge, error) {
+	rows, err := s.db.Query(`SELECT repo, source, target, relation, confidence, context FROM symbol_edges `+where, args...)
 	if err != nil {
 		return nil, err
 	}
