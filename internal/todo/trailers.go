@@ -10,17 +10,57 @@ import (
 // git log) is the only writer; everything here treats the table as a cache that TRUNCATE restores,
 // never as authored data, so there is no soft-delete and no trash.
 
+// execer is *sql.DB or *sql.Tx — so one insert body serves both a single PutTrailer and the batched
+// rebuild inside a Reindex transaction.
+type execer interface {
+	Exec(query string, args ...any) (sql.Result, error)
+}
+
 // PutTrailer inserts or replaces one trailer node. reindex calls it per commit; a second call for
 // the same sha overwrites, so a rebuild that re-sees a commit is idempotent.
-func (s *Store) PutTrailer(t Trailer) error {
+func (s *Store) PutTrailer(t Trailer) error { return putTrailer(s.db, t) }
+
+func putTrailer(x execer, t Trailer) error {
 	tags, _ := json.Marshal(normTags(t.Tags))
 	parents, _ := json.Marshal(t.Parents)
-	_, err := s.db.Exec(`
+	_, err := x.Exec(`
 INSERT INTO trailers (sha, repo, subject, body, tags, parents, at) VALUES (?,?,?,?,?,?,?)
 ON CONFLICT(sha) DO UPDATE SET repo=excluded.repo, subject=excluded.subject, body=excluded.body,
     tags=excluded.tags, parents=excluded.parents, at=excluded.at`,
 		t.SHA, t.Repo, t.Subject, t.Body, string(tags), string(parents), t.At)
 	return err
+}
+
+// Reindex rebuilds the derived layer from git: it reads the whole log of rev in dir (main, by
+// convention — the integrated history whose conflicts are already resolved), then in ONE
+// transaction empties the trailer cache and re-fills it, one node per commit, its parents the git
+// edges. The authored side — tasks and the trailer→epic bindings — is in other tables and is never
+// touched, so this destructive rebuild can never lose work git cannot restore. repo is the source
+// label a trailer resolves its epic through when nothing local overrides it. Returns the node count.
+//
+// It is whole-history each time, not incremental: correct is cheaper to keep than clever, and a
+// TRUNCATE+rebuild cannot drift the way a patched cache can.
+func (s *Store) Reindex(dir, repo, rev string) (int, error) {
+	commits, err := LogCommits(dir, rev)
+	if err != nil {
+		return 0, err
+	}
+	tx, err := s.db.Begin()
+	if err != nil {
+		return 0, err
+	}
+	defer func() { _ = tx.Rollback() }()
+	if _, err := tx.Exec(`DELETE FROM trailers`); err != nil {
+		return 0, err
+	}
+	for _, c := range commits {
+		t := Trailer{SHA: c.SHA, Repo: repo, Subject: c.Subject, Body: c.Message,
+			Parents: c.Parents, At: c.Date}
+		if err := putTrailer(tx, t); err != nil {
+			return 0, err
+		}
+	}
+	return len(commits), tx.Commit()
 }
 
 // GetTrailer returns one trailer by sha.

@@ -611,6 +611,28 @@ func frontCommands() []*cobra.Command {
 	}
 	uninstall.Flags().String("dir", ".", "project directory")
 	uninstall.Flags().String("instructions", instructionsDefault, "file the usage block was installed into")
+	reindex := &cobra.Command{
+		Use:   "reindex",
+		Short: "rebuild the derived trailer layer from git (main, by convention)",
+		Long: `Read the whole log of --rev (default 'main') in --dir and rebuild the trailer cache from it —
+one node per commit, parents as edges. The authored tasks and trailer→epic bindings are untouched.
+Meant to be cheap and repeatable: a git post-merge/post-checkout hook, the start of ` + "`todo mcp`" + `, or by
+hand after a fetch. --repo labels the source (default: the directory's name).`,
+		Args: cobra.NoArgs,
+		RunE: withStore(func(st *todo.Store, cmd *cobra.Command, _ []string) error {
+			dir := mustFlag(cmd, "dir")
+			n, err := st.Reindex(dir, reindexRepo(mustFlag(cmd, "repo"), dir), mustFlag(cmd, "rev"))
+			if err != nil {
+				return err
+			}
+			fmt.Fprintf(os.Stderr, "reindexed %d commits\n", n)
+			return nil
+		}),
+	}
+	reindex.Flags().String("dir", ".", "the git repository")
+	reindex.Flags().String("rev", "main", "the ref or range to read")
+	reindex.Flags().String("repo", "", "source label for the trailers (default: the directory's name)")
+
 	schema := &cobra.Command{
 		Use: "schema", Short: "the field and command contract, as JSON", Args: cobra.NoArgs,
 		Run: func(_ *cobra.Command, _ []string) { emitSchema() },
@@ -659,7 +681,20 @@ The copy is then OPENED and counted, because a backup that cannot be read is not
 			return nil
 		}),
 	}
-	return []*cobra.Command{mcp, install, uninstall, schema, backup}
+	return []*cobra.Command{mcp, install, uninstall, reindex, schema, backup}
+}
+
+// reindexRepo is the source label for a reindex: the given --repo, or the directory's own name when
+// none is given — a stable handle for the commits' origin, which a trailer resolves its epic through
+// when nothing local overrides it.
+func reindexRepo(repo, dir string) string {
+	if len(repo) > 0 {
+		return repo
+	}
+	if abs, err := filepath.Abs(dir); err == nil {
+		return filepath.Base(abs)
+	}
+	return dir
 }
 
 // jsonOut is true when the caller wants machine output: --json, or any time stdout is not a tty.
@@ -794,6 +829,8 @@ func emitSchema() {
 			"docs":   "<task-or-doc-id> — the docs a task maps to; a doc's related pages", "tasks": "<doc-id> — the tasks a doc maps to",
 			"commit": "<task> <sha> — record a commit", "commits": "<task>",
 			"sync-commits": "[--dir --rev] — scan git log for task ids",
+			"reindex":      "[--dir --rev --repo] — rebuild the derived trailer layer from git",
+			"trailer":      "bind|epic|list — the git commits reindex projects into the graph",
 		},
 		"output": "JSON Lines under --json or into a pipe; exit 0 found / 2 empty / 1 error",
 	}

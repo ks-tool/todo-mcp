@@ -1,6 +1,9 @@
 package todo
 
 import (
+	"os"
+	"os/exec"
+	"path/filepath"
 	"slices"
 	"testing"
 )
@@ -99,5 +102,72 @@ func TestTrailerEpicResolution(t *testing.T) {
 	}
 	if e, _ := st.TrailerEpic("sha-1"); e != "service" {
 		t.Errorf("after unbind the inherited epic answers, got %q", e)
+	}
+}
+
+// TestReindexFromGit covers todomcp-04: reindex reads the log of main and rebuilds the trailer
+// cache — one node per commit, parents as edges — leaving the authored tasks alone, and a second
+// run is idempotent because it TRUNCATEs first.
+func TestReindexFromGit(t *testing.T) {
+	dir := t.TempDir()
+	git := func(args ...string) {
+		t.Helper()
+		cmd := exec.Command("git", append([]string{"-C", dir}, args...)...)
+		cmd.Env = append(os.Environ(),
+			"GIT_AUTHOR_NAME=t", "GIT_AUTHOR_EMAIL=t@t", "GIT_COMMITTER_NAME=t", "GIT_COMMITTER_EMAIL=t@t")
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %v\n%s", args, err, out)
+		}
+	}
+	git("init", "-b", "main")
+	if err := os.WriteFile(filepath.Join(dir, "a.txt"), []byte("one"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	git("add", "-A")
+	git("commit", "-m", "first: the root")
+	if err := os.WriteFile(filepath.Join(dir, "a.txt"), []byte("two"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	git("add", "-A")
+	git("commit", "-m", "second: builds on the first")
+
+	st := openTemp(t)
+	if err := st.Put(Task{ID: "z-01", Epic: "z", Text: "authored, untouched by reindex"}); err != nil {
+		t.Fatal(err)
+	}
+	n, err := st.Reindex(dir, "myrepo", "main")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if n != 2 {
+		t.Fatalf("reindex must project both commits, got %d", n)
+	}
+	ts, err := st.Trailers("myrepo")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(ts) != 2 {
+		t.Fatalf("want 2 trailers, got %d", len(ts))
+	}
+	// Newest first: the second commit, and it names the first as a parent — the git edge.
+	if ts[0].Subject != "second: builds on the first" {
+		t.Errorf("newest-first order broken: %q", ts[0].Subject)
+	}
+	if len(ts[0].Parents) != 1 || ts[0].Parents[0] != ts[1].SHA {
+		t.Errorf("the second commit must edge to the first: parents=%v first=%s", ts[0].Parents, ts[1].SHA)
+	}
+	if len(ts[1].Parents) != 0 {
+		t.Errorf("the root commit has no parent, got %v", ts[1].Parents)
+	}
+
+	// Idempotent: a second reindex TRUNCATEs and rebuilds to the same two, and the task still stands.
+	if _, err := st.Reindex(dir, "myrepo", "main"); err != nil {
+		t.Fatal(err)
+	}
+	if ts, _ := st.Trailers(""); len(ts) != 2 {
+		t.Errorf("a second reindex must not double the cache, got %d", len(ts))
+	}
+	if ls, _ := st.List(Filter{}); len(ls) != 1 {
+		t.Errorf("reindex must leave the authored task alone, got %d", len(ls))
 	}
 }

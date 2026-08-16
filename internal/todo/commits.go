@@ -58,6 +58,50 @@ func ScanCommits(dir, rev string) ([]CommitLink, error) {
 	return links, nil
 }
 
+// Commit is one commit read whole from the log — everything a trailer node needs. Parents are the
+// git edges the graph walks; Message is the commit message as-is, subject and body together.
+type Commit struct {
+	SHA     string
+	Parents []string
+	Date    string // committer date, ISO 8601 (%cI)
+	Subject string
+	Message string // %B — the raw message, subject and body
+}
+
+// LogCommits reads the whole log of rev in dir — every commit as a node, with its parents as edges.
+// It is what reindex projects into the derived layer; it only READS git, so the projection is
+// testable without a repository of the right shape. rev is a ref or range ("main", "v1..HEAD").
+func LogCommits(dir, rev string) ([]Commit, error) {
+	args := []string{"-C", dir, "log", "--format=%H%x1f%P%x1f%cI%x1f%s%x1f%B%x1e"}
+	if len(rev) > 0 {
+		args = append(args, rev)
+	}
+	out, err := exec.Command("git", args...).Output()
+	if err != nil {
+		return nil, err
+	}
+	var commits []Commit
+	for rec := range strings.SplitSeq(string(out), "\x1e") {
+		rec = strings.Trim(rec, "\n")
+		if len(rec) == 0 {
+			continue
+		}
+		parts := strings.SplitN(rec, "\x1f", 5)
+		if len(parts) < 4 {
+			continue
+		}
+		c := Commit{SHA: parts[0], Date: parts[2], Subject: parts[3]}
+		if len(parts[1]) > 0 {
+			c.Parents = strings.Fields(parts[1])
+		}
+		if len(parts) == 5 {
+			c.Message = strings.TrimRight(parts[4], "\n")
+		}
+		commits = append(commits, c)
+	}
+	return commits, nil
+}
+
 // SyncCommits discovers commit→task mappings and writes them as commit links. A commit that names a
 // task the store does not have is skipped rather than failed — a message can mention an id that was
 // renamed or never existed, and one bad reference must not stop the sweep. Returns how many edges

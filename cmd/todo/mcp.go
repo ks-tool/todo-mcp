@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"os"
 	"time"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -310,6 +311,23 @@ func runMCP(st *todo.Store) error {
 			return textResult(fmt.Sprintf("wrote %d commit links", n)), countOut{Count: n}, err
 		})
 
+	mcp.AddTool(s, &mcp.Tool{Name: "reindex",
+		Description: "Rebuild the derived trailer layer from git: read the whole log of rev (default 'main') in dir (default '.') and re-fill the trailer cache, one node per commit. The authored tasks and trailer→epic bindings are untouched. repo labels the source (default: the directory's name)."},
+		func(_ context.Context, _ *mcp.CallToolRequest, in reindexIn) (*mcp.CallToolResult, countOut, error) {
+			dir := orElse(in.Dir, ".")
+			n, err := st.Reindex(dir, reindexRepo(in.Repo, dir), orElse(in.Rev, "main"))
+			return textResult(fmt.Sprintf("reindexed %d commits", n)), countOut{Count: n}, err
+		})
+
+	// A best-effort reindex at start-up, so the server's graph reflects the history without waiting
+	// for a hook or a manual call. The server runs in the project root, so "." is the repo; any
+	// failure (not a git repo, no main) is a note on stderr, never a reason not to serve.
+	if n, err := st.Reindex(".", reindexRepo("", "."), "main"); err != nil {
+		fmt.Fprintf(os.Stderr, "todo: start-up reindex skipped: %v\n", err)
+	} else {
+		fmt.Fprintf(os.Stderr, "todo: reindexed %d commits at start-up\n", n)
+	}
+
 	return s.Run(context.Background(), &mcp.StdioTransport{})
 }
 
@@ -400,6 +418,11 @@ type commitIn struct {
 type syncIn struct {
 	Dir string `json:"dir,omitempty"`
 	Rev string `json:"rev,omitempty"`
+}
+type reindexIn struct {
+	Dir  string `json:"dir,omitempty"`
+	Rev  string `json:"rev,omitempty"`
+	Repo string `json:"repo,omitempty"`
 }
 
 type docOut struct {
