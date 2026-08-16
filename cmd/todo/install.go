@@ -61,16 +61,12 @@ func runInstall(dir, db string, epics []string, instructions string) error {
 		fmt.Fprintf(os.Stderr, "kept the usage block in %s current\n", md)
 	}
 
-	// Reindex on install, so the trailer graph reflects the history from the first session rather than
-	// waiting for the first hook or server start. Best-effort: the same database the server will use,
-	// and a directory that is not a git repo (or has no main) is a note, never a failed install.
-	if st, err := todo.Open(resolveDB()); err == nil {
-		if n, rerr := st.Reindex(dir, reindexRepo("", dir), "main"); rerr != nil {
-			fmt.Fprintf(os.Stderr, "reindex skipped: %v\n", rerr)
-		} else {
-			fmt.Fprintf(os.Stderr, "reindexed %d commits from git\n", n)
-		}
-		_ = st.Close()
+	// install does NOT reindex: that rebuilds this repo's trailers in the database, a change worth
+	// making on purpose and after a backup. So when the repository already has history, point at the
+	// two commands to run rather than running one silently.
+	if n := todo.CommitCount(dir); n > 0 {
+		fmt.Fprintf(os.Stderr, "this repository already has %d commit(s) — load them into the graph, but back up first:\n"+
+			"  todo backup\n  todo reindex\n", n)
 	}
 
 	fmt.Fprintln(os.Stderr, "the host reads .mcp.json at startup, so restart the session for the tools to appear")

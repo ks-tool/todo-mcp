@@ -3,8 +3,20 @@ package todo
 import (
 	"os/exec"
 	"regexp"
+	"strconv"
 	"strings"
 )
+
+// CommitCount is how many commits dir's HEAD carries, or 0 when dir is not a git repository or has
+// no commits yet. install uses it to decide whether to suggest a reindex.
+func CommitCount(dir string) int {
+	out, err := exec.Command("git", "-C", dir, "rev-list", "--count", "HEAD").Output()
+	if err != nil {
+		return 0
+	}
+	n, _ := strconv.Atoi(strings.TrimSpace(string(out)))
+	return n
+}
 
 // taskRef matches a task id wherever it appears in a commit message — the subject, the body, a
 // trailer like "Task: ee-scheduler-07". It is the same shape the ids are minted in.
