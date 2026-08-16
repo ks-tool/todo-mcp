@@ -77,6 +77,22 @@ func (s *Store) Reindex(dir, repo, rev string) (int, error) {
 	return len(commits), tx.Commit()
 }
 
+// HasTrailer reports whether a sha (full, or a prefix) is a trailer in the cache — a commit reindex
+// loaded from SOME repo's history. It is the cross-repo signal that a sha is a known commit even when
+// it is not in the current directory's repo, so a commit link is not refused just because the server
+// runs in a different project's checkout than the one the commit belongs to.
+func (s *Store) HasTrailer(sha string) (bool, error) {
+	if len(sha) == 0 {
+		return false, nil
+	}
+	var one int
+	err := s.db.QueryRow(`SELECT 1 FROM trailers WHERE sha = ? OR sha LIKE ? || '%' LIMIT 1`, sha, sha).Scan(&one)
+	if err == sql.ErrNoRows {
+		return false, nil
+	}
+	return err == nil, err
+}
+
 // GetTrailer returns one trailer by sha.
 func (s *Store) GetTrailer(sha string) (Trailer, bool, error) {
 	ts, err := s.scanTrailers(`WHERE sha = ?`, sha)

@@ -200,15 +200,17 @@ func shortref(sha string) string {
 	return sha
 }
 
-// guardRepoCommit refuses a sha the git repository at dir does not contain: a dependency's or
-// library's commit is not in this repo's history, so it belongs in a task comment (todo note), not
-// a commit link that would point the provenance graph at a ref going nowhere. When dir is not a repo
-// the membership cannot be judged and the record is allowed through.
-func guardRepoCommit(dir, sha string) error {
-	if isRepo, has := todo.RepoHasCommit(dir, sha); isRepo && !has {
-		return fmt.Errorf("%s is not a commit in this repo (%s); a dependency's sha is a task comment (todo note), not a commit", shortref(sha), dir)
+// commitKnown reports whether a sha is one this backlog can vouch for: a commit in the git repo at
+// dir, OR a trailer already in the cache (reindex loaded it from some repo's history). The trailer
+// check is what makes the guard work across a multi-project backlog — a commit of ANOTHER project,
+// reindexed into the same database, is known even though the current directory's repo does not hold
+// it — while a dependency's sha, in no tracked history, stays unknown.
+func commitKnown(st *todo.Store, dir, sha string) bool {
+	if ok, _ := st.HasTrailer(sha); ok {
+		return true
 	}
-	return nil
+	_, has := todo.RepoHasCommit(dir, sha)
+	return has
 }
 
 // resolveDB is where the backlog comes from, in one fixed order: --db, then TODO_DB — read the same

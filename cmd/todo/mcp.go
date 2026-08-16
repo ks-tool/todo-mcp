@@ -292,17 +292,25 @@ func runMCP(st *todo.Store) error {
 		})
 
 	mcp.AddTool(s, &mcp.Tool{Name: "task_commit",
-		Description: "Record a commit against a task (sha, note=subject, at=ISO 8601 commit date), or with del=true unlink it. A task accretes many over its life. A sha this repo does not contain is refused — a dependency's or library's commit is a task comment (todo_note), not a commit link."},
+		Description: "Record a commit against a task (sha, note=subject, at=ISO 8601 commit date), or with del=true unlink it. A task accretes many over its life. Pass dir to assert which repo the commit lives in — then a sha that repo (or the trailer cache) does not contain is refused, because a dependency's commit is a task comment (todo_note), not a commit link. Without dir the link is recorded and only flagged when the sha is unknown here, since one backlog may serve several repos and the server sees only its own directory."},
 		func(_ context.Context, _ *mcp.CallToolRequest, in commitIn) (*mcp.CallToolResult, okOut, error) {
 			if in.Del {
 				err := st.Unlink(in.TaskID, todo.LinkCommit, in.SHA)
 				return okResult(err == nil, in.TaskID), okOut{OK: err == nil}, err
 			}
-			if isRepo, has := todo.RepoHasCommit(".", in.SHA); isRepo && !has {
-				return errText(shortref(in.SHA) + " is not a commit in this repo; a dependency's sha is a task comment (todo_note), not a commit"), okOut{}, nil
+			// With an explicit dir the caller asserts the repo, so an unknown sha is a hard error. With
+			// none, the server's directory may be a different project than the commit's — so record it
+			// and only flag an unknown sha rather than block a legitimate cross-repo link.
+			if len(in.Dir) > 0 && !commitKnown(st, in.Dir, in.SHA) {
+				return errText(shortref(in.SHA) + " is not a commit in " + in.Dir + " or the trailer cache; a dependency's sha is a task comment (todo_note), not a commit"), okOut{}, nil
 			}
-			err := st.Link(in.TaskID, todo.LinkCommit, in.SHA, in.Note, in.At)
-			return okResult(err == nil, in.TaskID), okOut{OK: err == nil}, err
+			if err := st.Link(in.TaskID, todo.LinkCommit, in.SHA, in.Note, in.At); err != nil {
+				return okResult(false, in.TaskID), okOut{OK: false}, err
+			}
+			if len(in.Dir) == 0 && !commitKnown(st, ".", in.SHA) {
+				return textResult("recorded, but " + shortref(in.SHA) + " is not in this directory's repo or the trailer cache — if it is a dependency's commit, prefer todo_note"), okOut{OK: true}, nil
+			}
+			return textResult("ok"), okOut{OK: true}, nil
 		})
 
 	mcp.AddTool(s, &mcp.Tool{Name: "todo_note",
@@ -440,7 +448,8 @@ type commitIn struct {
 	TaskID string `json:"taskId"`
 	SHA    string `json:"sha"`
 	Note   string `json:"note,omitempty"`
-	At     string `json:"at,omitempty"` // commit date, ISO 8601; sync_commits fills this from git
+	At     string `json:"at,omitempty"`  // commit date, ISO 8601; sync_commits fills this from git
+	Dir    string `json:"dir,omitempty"` // assert the repo the commit lives in; unknown sha is then refused
 	Del    bool   `json:"del,omitempty"`
 }
 type noteIn struct {

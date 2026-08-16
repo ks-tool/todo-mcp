@@ -234,8 +234,9 @@ func wikiCommands() []*cobra.Command {
 			if mustBool(cmd, "del") {
 				return st.Unlink(args[0], todo.LinkCommit, args[1])
 			}
-			if err := guardRepoCommit(mustFlag(cmd, "dir"), args[1]); err != nil {
-				return err
+			dir := mustFlag(cmd, "dir")
+			if !commitKnown(st, dir, args[1]) {
+				return fmt.Errorf("%s is not a commit in this repo (%s) or the trailer cache; a dependency's sha is a task comment (todo note), not a commit", shortref(args[1]), dir)
 			}
 			return st.Link(args[0], todo.LinkCommit, args[1], mustFlag(cmd, "note"), mustFlag(cmd, "at"))
 		}),
