@@ -55,6 +55,9 @@ func (s *Store) IngestGraph(repo, path string) (int, error) {
 	if _, err := tx.Exec(`DELETE FROM symbols WHERE repo = ?`, repo); err != nil {
 		return 0, err
 	}
+	if _, err := tx.Exec(`DELETE FROM symbol_edges WHERE repo = ?`, repo); err != nil {
+		return 0, err
+	}
 	for _, n := range g.Nodes {
 		if _, err := tx.Exec(`INSERT INTO symbols (repo, sid, label, kind, file, line) VALUES (?,?,?,?,?,?)
 ON CONFLICT(repo, sid) DO UPDATE SET label=excluded.label, kind=excluded.kind, file=excluded.file, line=excluded.line`,
@@ -62,7 +65,45 @@ ON CONFLICT(repo, sid) DO UPDATE SET label=excluded.label, kind=excluded.kind, f
 			return 0, err
 		}
 	}
+	for _, l := range g.Links {
+		if _, err := tx.Exec(`INSERT INTO symbol_edges (repo, source, target, relation, confidence, context) VALUES (?,?,?,?,?,?)
+ON CONFLICT(repo, source, target, relation) DO UPDATE SET confidence=excluded.confidence, context=excluded.context`,
+			repo, l.Source, l.Target, l.Relation, l.Confidence, l.Context); err != nil {
+			return 0, err
+		}
+	}
 	return len(g.Nodes), tx.Commit()
+}
+
+// SymbolEdge is one code edge: a relation between two symbols and how sure the extractor is
+// (EXTRACTED from the AST, or INFERRED by heuristic).
+type SymbolEdge struct {
+	Repo       string `json:"repo"`
+	Source     string `json:"source"`
+	Target     string `json:"target"`
+	Relation   string `json:"relation"`
+	Confidence string `json:"confidence"`
+	Context    string `json:"context,omitempty"`
+}
+
+// SymbolEdges returns every edge touching sid in a repo — out of it or into it — which is a node's
+// neighbourhood for an explain view.
+func (s *Store) SymbolEdges(repo, sid string) ([]SymbolEdge, error) {
+	rows, err := s.db.Query(`SELECT repo, source, target, relation, confidence, context
+FROM symbol_edges WHERE repo = ? AND (source = ? OR target = ?) ORDER BY relation, target`, repo, sid, sid)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = rows.Close() }()
+	var out []SymbolEdge
+	for rows.Next() {
+		var e SymbolEdge
+		if err := rows.Scan(&e.Repo, &e.Source, &e.Target, &e.Relation, &e.Confidence, &e.Context); err != nil {
+			return nil, err
+		}
+		out = append(out, e)
+	}
+	return out, rows.Err()
 }
 
 // symbolKind reduces a graphify node to a coarse kind: its own type when it has one (a package), a

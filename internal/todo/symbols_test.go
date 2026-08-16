@@ -16,7 +16,10 @@ func TestIngestGraph(t *testing.T) {
 	  {"id":"a_helpers","label":"helpers.go","file_type":"code","source_file":"a/helpers.go","source_location":"L1"},
 	  {"id":"a_helpers_do","label":"Do()","file_type":"code","source_file":"a/helpers.go","source_location":"L11"},
 	  {"id":"doc_readme","label":"README.md","file_type":"document","source_file":"README.md","source_location":"L1"}
-	],"links":[]}`
+	],"links":[
+	  {"source":"a_helpers","target":"a_helpers_do","relation":"contains","confidence":"EXTRACTED"},
+	  {"source":"a_helpers_do","target":"pkg_x","relation":"calls","confidence":"INFERRED","context":"call"}
+	]}`
 	p := filepath.Join(t.TempDir(), "graph.json")
 	if err := os.WriteFile(p, []byte(graph), 0o644); err != nil {
 		t.Fatal(err)
@@ -43,6 +46,19 @@ func TestIngestGraph(t *testing.T) {
 	}
 	if sym, ok, _ := st.GetSymbol("mine", "a_helpers_do"); !ok || sym.File != "a/helpers.go" || sym.Line != "L11" {
 		t.Errorf("symbol source lost: %+v", sym)
+	}
+
+	// Edges ingest too, both directions around a node, with the extractor's confidence.
+	es, _ := st.SymbolEdges("mine", "a_helpers_do")
+	if len(es) != 2 {
+		t.Fatalf("want 2 edges around a_helpers_do, got %d", len(es))
+	}
+	conf := map[string]string{}
+	for _, e := range es {
+		conf[e.Relation] = e.Confidence
+	}
+	if conf["contains"] != "EXTRACTED" || conf["calls"] != "INFERRED" {
+		t.Errorf("edge confidence lost: %v", conf)
 	}
 
 	// A second repo's graph ingests alongside, not over.

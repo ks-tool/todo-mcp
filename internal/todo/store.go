@@ -152,6 +152,20 @@ CREATE TABLE IF NOT EXISTS symbols (
 );
 CREATE INDEX IF NOT EXISTS symbols_by_file ON symbols(repo, file);
 
+-- The edges of the symbol layer, ingested from graphify's links: relation (calls, imports_from,
+-- references, method, contains, depends_on) and confidence (EXTRACTED | INFERRED). Rebuilt per repo
+-- with the symbols. These are what explain and path walk over the code side.
+CREATE TABLE IF NOT EXISTS symbol_edges (
+    repo       TEXT NOT NULL,
+    source     TEXT NOT NULL,
+    target     TEXT NOT NULL,
+    relation   TEXT NOT NULL DEFAULT '',
+    confidence TEXT NOT NULL DEFAULT '',
+    context    TEXT NOT NULL DEFAULT '',
+    PRIMARY KEY (repo, source, target, relation)
+);
+CREATE INDEX IF NOT EXISTS symbol_edges_by_target ON symbol_edges(repo, target);
+
 -- The trailer→epic binding is AUTHORED, not derived: it is the local decision to file a commit from
 -- the history under one of your own epics, and it must survive the reindex that rebuilds the trailer
 -- cache. So it lives in its own table, keyed by sha, and reindex never touches it. Epics are local —
