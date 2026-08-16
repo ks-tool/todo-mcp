@@ -15,19 +15,41 @@ const newEpicSentinel = "＋ new epic…"
 
 // uiForm is one modal interaction: a huh form plus what to do when it completes. huh forms are
 // bubbletea models themselves, so update delegates to them and watches the state — completed runs
-// save, aborted (Esc) just closes, and either way the list reloads to show the truth.
+// save, aborted (Esc) just closes, and either way the list reloads to show the truth. next, when
+// set, opens a FOLLOW-UP modal after this one completes — how the add flow chains the epic pick into
+// the field form.
 type uiForm struct {
 	form *huh.Form
 	save func()
+	next func() tea.Cmd
 }
 
 // openForm activates a form and returns its Init command, which the CALLER must hand back to the
 // program: huh drives its own field focus through commands, and a discarded Init is a form that
 // never focuses its first field.
 func (m *tui) openForm(f *huh.Form, save func()) tea.Cmd {
-	m.form = &uiForm{form: f, save: save}
+	return m.openFormNext(f, save, nil)
+}
+
+// openFormNext is openForm with a follow-up: after this form completes and saves, next opens the
+// modal that comes after it (returning that modal's Init command).
+func (m *tui) openFormNext(f *huh.Form, save func(), next func() tea.Cmd) tea.Cmd {
+	m.form = &uiForm{form: f, save: save, next: next}
 	m.focus = focusForm
 	return f.Init()
+}
+
+// selectHeight caps how many option lines a select shows before it scrolls, so a long list of epics,
+// tags or docs stays inside the terminal instead of overflowing the modal past the screen edge.
+func (m *tui) selectHeight() int {
+	h := m.height - 10 // leave room for the border, the title and the status line
+	if h < 4 {
+		return 4
+	}
+	if h > 12 {
+		return 12
+	}
+	return h
 }
 
 func (m *tui) updateForm(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -49,10 +71,18 @@ func (m *tui) updateForm(msg tea.Msg) (tea.Model, tea.Cmd) {
 	}
 	switch m.form.form.State {
 	case huh.StateCompleted:
-		m.form.save()
+		done := m.form
 		m.form = nil
 		m.focus = focusList
+		if done.save != nil {
+			done.save()
+		}
 		m.reload()
+		// A follow-up modal (the add flow's epic pick → field form) takes over from here; its Init is
+		// the command the program must run to focus it.
+		if done.next != nil {
+			return m, done.next()
+		}
 		return m, nil
 	case huh.StateAborted:
 		m.form = nil
@@ -64,53 +94,75 @@ func (m *tui) updateForm(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 func (m *tui) View_FormActive() bool { return m.focus == focusForm && m.form != nil }
 
-// openTaskForm edits t, or creates a new task when t is nil. The id is minted on save, never
-// asked for.
+// openTaskForm edits t, or creates a new task when t is nil. The epic is handled apart from the
+// other fields: an edit cannot MOVE a task between epics, so the epic is shown read-only in the form
+// title and never listed; a new task picks its epic in its OWN modal first (openAddEpicForm), so the
+// field form never carries the whole epic list and cannot outgrow the terminal.
 func (m *tui) openTaskForm(t *todo.Task) tea.Cmd {
-	var cur todo.Task
 	if t != nil {
-		cur = *t
-	} else if len(m.tags) > 0 {
-		cur.Tags = append([]string(nil), m.tags...) // the active filter is the natural default for a new task
+		return m.taskFieldsForm(*t, t, t.Epic)
 	}
+	return m.openAddEpicForm()
+}
+
+// openAddEpicForm is the add flow's first step: choose the epic in a dedicated modal — like the epic
+// filter, but with a "＋ new epic…" option and an input to name one — then chain into the field form
+// with that epic fixed. Kept separate so the (potentially long) epic list never bloats the fields.
+func (m *tui) openAddEpicForm() tea.Cmd {
+	sel, opts := m.epicField("")
+	newName := ""
+	f := huh.NewForm(huh.NewGroup(
+		huh.NewSelect[string]().Title("epic").Options(opts...).Value(&sel).Height(m.selectHeight()),
+		huh.NewInput().Title("new epic (used if ＋ new epic… is chosen)").Value(&newName),
+	).Title("new task · pick an epic"))
+	return m.openFormNext(f, nil, func() tea.Cmd {
+		epic := sel
+		if epic == newEpicSentinel {
+			epic = strings.TrimSpace(newName)
+		}
+		if len(epic) == 0 {
+			m.flash = "an epic is required"
+			return nil
+		}
+		base := todo.Task{}
+		if len(m.tags) > 0 {
+			base.Tags = append([]string(nil), m.tags...) // the active filter is the natural default
+		}
+		return m.taskFieldsForm(base, nil, epic)
+	})
+}
+
+// taskFieldsForm is the fields common to add and edit — tags, priority, dep, text — under a title
+// that names the (fixed) epic. orig is the task being edited, or nil for a new one whose id is
+// minted on save. slug and touchpoints are carried through untouched: they are path/linking
+// metadata, kept off the human form (the CLI is where they change).
+func (m *tui) taskFieldsForm(cur todo.Task, orig *todo.Task, epic string) tea.Cmd {
 	tags := joinComma(cur.Tags)
 	pri, dep, text := cur.Priority, cur.DepText, cur.Text
-
-	// The epic is CHOSEN from the ones that exist, not typed — a free-text epic is how a project ends
-	// up with two spellings of the same thing. A "＋ new epic…" option, with the input beside it,
-	// keeps creating one in the same window.
-	epicSel, newEpicOpts := m.epicField(cur.Epic)
-	newEpicName := ""
-
-	// slug and touchpoints are not edited here — they are path/linking metadata, kept off the human
-	// form; an edit carries the stored values through untouched (the CLI is where they change).
+	title := "new task · epic: " + epic
+	if orig != nil {
+		title = "edit " + orig.ID + " · epic: " + epic
+	}
 	f := huh.NewForm(huh.NewGroup(
-		huh.NewSelect[string]().Title("epic").Options(newEpicOpts...).Value(&epicSel),
-		huh.NewInput().Title("new epic (used if ＋ new epic… is chosen)").Value(&newEpicName),
 		huh.NewInput().Title("tags (comma, optional)").Value(&tags),
 		huh.NewInput().Title("priority").Value(&pri),
 		huh.NewInput().Title("dep").Value(&dep),
 		huh.NewText().Title("text").Value(&text).Lines(8),
-	))
+	).Title(title))
 	return m.openForm(f, func() {
-		epic := epicSel
-		if epic == newEpicSentinel {
-			epic = strings.TrimSpace(newEpicName)
-		}
-		if len(epic) == 0 || len(text) == 0 {
-			m.flash = "epic and text are required"
+		if len(text) == 0 {
+			m.flash = "text is required"
 			return
 		}
 		edited := todo.Task{
 			Epic: epic, Tags: splitComma(tags), Priority: pri, Slug: cur.Slug,
-			Touch: cur.Touch, DepText: dep, Text: text,
-			Status: cur.Status,
+			Touch: cur.Touch, DepText: dep, Text: text, Status: cur.Status,
 		}
 		if len(edited.Status) == 0 {
 			edited.Status = todo.StatusOpen
 		}
-		if t != nil {
-			edited.ID, edited.Order = t.ID, t.Order
+		if orig != nil {
+			edited.ID, edited.Order = orig.ID, orig.Order
 		} else {
 			id, err := m.store.NextID(epic)
 			if err != nil {
@@ -229,7 +281,7 @@ func (m *tui) openLinkForm(t todo.Task) tea.Cmd {
 	}
 	var docID string
 	f := huh.NewForm(huh.NewGroup(
-		huh.NewSelect[string]().Title("link doc → " + t.ID).Options(opts...).Value(&docID),
+		huh.NewSelect[string]().Title("link doc → " + t.ID).Options(opts...).Value(&docID).Height(m.selectHeight()),
 	))
 	return m.openForm(f, func() {
 		if err := m.store.Link(t.ID, todo.LinkDoc, docID, ""); err != nil {
@@ -254,7 +306,7 @@ func (m *tui) openTagFilter() tea.Cmd {
 	}
 	f := huh.NewForm(huh.NewGroup(
 		huh.NewMultiSelect[string]().Title("filter by tags (space toggles, enter applies)").
-			Options(opts...).Value(&selected),
+			Options(opts...).Value(&selected).Height(m.selectHeight()),
 	))
 	return m.openForm(f, func() {
 		m.tags = selected
@@ -280,7 +332,7 @@ func (m *tui) openEpicFilter() tea.Cmd {
 	}
 	sel := m.epicF
 	f := huh.NewForm(huh.NewGroup(
-		huh.NewSelect[string]().Title("filter by epic (project)").Options(opts...).Value(&sel),
+		huh.NewSelect[string]().Title("filter by epic (project)").Options(opts...).Value(&sel).Height(m.selectHeight()),
 	))
 	return m.openForm(f, func() { m.epicF = sel })
 }

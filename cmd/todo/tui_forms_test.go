@@ -1,7 +1,9 @@
 package main
 
 import (
+	"fmt"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -33,6 +35,54 @@ func key(s string) tea.KeyMsg {
 		return tea.KeyMsg{Type: tea.KeyEsc}
 	}
 	return tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(s)}
+}
+
+// TestAddEpicModalFitsTerminal covers todomcp-15: the add flow picks the epic in its own modal
+// whose list is height-capped, so even many epics stay inside the terminal instead of overflowing.
+func TestAddEpicModalFitsTerminal(t *testing.T) {
+	var tasks []todo.Task
+	for i := 0; i < 40; i++ {
+		tasks = append(tasks, todo.Task{ID: fmt.Sprintf("e%02d-01", i), Epic: fmt.Sprintf("epic-%02d", i), Text: "x"})
+	}
+	m := tuiWith(t, tasks...)
+	m.Update(key("a")) // opens the dedicated epic-pick modal, not the field form
+	if m.focus != focusForm || m.form == nil {
+		t.Fatalf("the add epic modal did not open; focus=%v", m.focus)
+	}
+	if n := len(strings.Split(m.View(), "\n")); n > m.height {
+		t.Fatalf("the epic modal is %d lines on a %d-line terminal — it overflows", n, m.height)
+	}
+}
+
+// TestEditFormEpicReadOnly covers todomcp-15: an edit cannot move a task between epics — the epic is
+// shown in the title, not as an editable list, and the other epics never appear.
+func TestEditFormEpicReadOnly(t *testing.T) {
+	m := tuiWith(t,
+		todo.Task{ID: "a-01", Epic: "alpha", Text: "x"},
+		todo.Task{ID: "b-01", Epic: "beta", Text: "y"},
+	)
+	sel, ok := m.selectedTask()
+	if !ok {
+		t.Fatal("no task selected after reload")
+	}
+	m.Update(key("e")) // edit the selected task
+	if m.focus != focusForm || m.form == nil {
+		t.Fatalf("the edit form did not open; focus=%v", m.focus)
+	}
+	view := m.View()
+	if !strings.Contains(view, "epic: "+sel.Epic) {
+		t.Errorf("the edit form must show the current epic in the title:\n%s", view)
+	}
+	other := "beta"
+	if sel.Epic == "beta" {
+		other = "alpha"
+	}
+	if strings.Contains(view, other) {
+		t.Errorf("the edit form must not list the other epic %q:\n%s", other, view)
+	}
+	if n := len(strings.Split(view, "\n")); n > m.height {
+		t.Fatalf("the edit form is %d lines on a %d-line terminal", n, m.height)
+	}
 }
 
 // TestEpicField covers todomcp-09: the epic is chosen from the ones that exist, with a sentinel to
