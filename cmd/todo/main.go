@@ -58,8 +58,53 @@ Output is a table at a terminal, JSON Lines into a pipe or under --json. Exit: 0
 	root.AddCommand(commentCommands()...)
 	root.AddCommand(trailerCommands()...)
 	root.AddCommand(pathCommand())
+	root.AddCommand(explainCommand())
 	root.AddCommand(frontCommands()...)
 	return root
+}
+
+// explainCommand is the graphify `explain` view over the ingested symbol graph: a node, where it
+// lives, how connected it is, and its edges with their relation and inferred/extracted confidence.
+func explainCommand() *cobra.Command {
+	c := &cobra.Command{
+		Use:   "explain <node>",
+		Short: "a code symbol: its source and its connections (via the ingested graphify graph)",
+		Args:  cobra.ExactArgs(1),
+		RunE: withStore(func(st *todo.Store, cmd *cobra.Command, args []string) error {
+			ex, ok, err := st.Explain(mustFlag(cmd, "repo"), args[0])
+			if err != nil {
+				return err
+			}
+			if !ok {
+				fmt.Fprintln(os.Stderr, "no such node")
+				os.Exit(2)
+			}
+			if jsonOut() {
+				enc := json.NewEncoder(os.Stdout)
+				enc.SetIndent("", "  ")
+				return enc.Encode(ex)
+			}
+			printExplain(ex)
+			return nil
+		}),
+	}
+	c.Flags().String("repo", "", "restrict to one repo")
+	return c
+}
+
+func printExplain(ex *todo.SymbolExplain) {
+	fmt.Printf("Node: %s\n", ex.Symbol.Label)
+	fmt.Printf("  Source:    %s %s\n", ex.Symbol.File, ex.Symbol.Line)
+	fmt.Printf("  Repo:      %s\n", ex.Symbol.Repo)
+	fmt.Printf("  Degree:    %d\n\n", ex.Degree)
+	fmt.Printf("Connections (%d):\n", len(ex.Conns))
+	for _, c := range ex.Conns {
+		arrow := "-->"
+		if c.Dir == "in" {
+			arrow = "<--"
+		}
+		fmt.Printf("  %s %-32s [%s] [%s]\n", arrow, c.Label, c.Relation, c.Confidence)
+	}
 }
 
 // commentCommands are a task's comment thread: many timestamped entries, no author, soft-deleted

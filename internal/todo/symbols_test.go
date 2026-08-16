@@ -77,6 +77,27 @@ func TestIngestGraph(t *testing.T) {
 		t.Errorf("'other' repo must have its 1 symbol, got %d", len(ss))
 	}
 
+	// explain resolves by label (with/without ()) and reports connections with direction+confidence.
+	ex, ok, err := st.Explain("mine", "Do")
+	if err != nil || !ok {
+		t.Fatalf("explain 'Do' (matches Do()) must resolve: ok=%v err=%v", ok, err)
+	}
+	if ex.Symbol.SID != "a_helpers_do" || ex.Symbol.Line != "L11" || ex.Degree != 2 {
+		t.Errorf("explain node wrong: %+v deg=%d", ex.Symbol, ex.Degree)
+	}
+	got := map[string]string{} // relation -> confidence, for out-edges
+	for _, c := range ex.Conns {
+		if c.Dir == "out" {
+			got[c.Relation] = c.Confidence + ":" + c.Label
+		}
+	}
+	if got["calls"] != "INFERRED:example.com/x" {
+		t.Errorf("out calls edge wrong: %q", got["calls"])
+	}
+	if _, ok, _ := st.Explain("mine", "nonesuch"); ok {
+		t.Error("a missing node must not resolve")
+	}
+
 	// Re-ingesting 'mine' with fewer nodes replaces, not accumulates.
 	small := `{"nodes":[{"id":"a_helpers","label":"helpers.go","file_type":"code","source_file":"a/helpers.go","source_location":"L1"}],"links":[]}`
 	ps := filepath.Join(t.TempDir(), "small.json")

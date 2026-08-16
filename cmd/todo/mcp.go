@@ -387,6 +387,19 @@ func runMCP(st *todo.Store) error {
 			return textResult(fmt.Sprintf("%d step(s)", len(p.Steps))), pathOut{Path: p}, nil
 		})
 
+	mcp.AddTool(s, &mcp.Tool{Name: "explain",
+		Description: "A code symbol from the ingested graphify graph: its source (file:line), degree, and its connections — each with a relation (calls/imports_from/references/method/contains/depends_on) and confidence (EXTRACTED|INFERRED). node resolves as an exact id, an exact label (with or without '()'), or a label substring; repo restricts the search."},
+		func(_ context.Context, _ *mcp.CallToolRequest, in explainIn) (*mcp.CallToolResult, explainOut, error) {
+			ex, ok, err := st.Explain(in.Repo, in.Node)
+			if err != nil {
+				return result(0), explainOut{}, err
+			}
+			if !ok {
+				return textResult("no such node: " + in.Node), explainOut{}, nil
+			}
+			return textResult(fmt.Sprintf("degree %d", ex.Degree)), explainOut{Explain: ex}, nil
+		})
+
 	// A best-effort reindex at start-up, so the server's graph reflects the history without waiting
 	// for a hook or a manual call. The server runs in the project root, so "." is the repo; any
 	// failure (not a git repo, no main) is a note on stderr, never a reason not to serve.
@@ -523,6 +536,13 @@ type pathIn struct {
 }
 type pathOut struct {
 	Path *todo.Path `json:"path,omitempty"`
+}
+type explainIn struct {
+	Node string `json:"node"`
+	Repo string `json:"repo,omitempty"`
+}
+type explainOut struct {
+	Explain *todo.SymbolExplain `json:"explain,omitempty"`
 }
 
 type docOut struct {

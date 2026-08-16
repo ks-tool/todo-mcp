@@ -86,6 +86,81 @@ type SymbolEdge struct {
 	Context    string `json:"context,omitempty"`
 }
 
+// FindSymbol resolves a symbol from a reference: an exact node id, then an exact label (with or
+// without the trailing "()"), then a substring of the label. repo "" searches every repo. It is how
+// `explain APIRouter` finds the node named that.
+func (s *Store) FindSymbol(repo, query string) (Symbol, bool, error) {
+	q := strings.TrimSpace(query)
+	repoCond, repoArgs := "", []any(nil)
+	if len(repo) > 0 {
+		repoCond, repoArgs = " AND repo = ?", []any{repo}
+	}
+	for _, a := range []struct {
+		cond string
+		val  string
+	}{
+		{"sid = ?", q},
+		{"lower(label) = lower(?)", q},
+		{"lower(label) = lower(?)", q + "()"},
+		{"label LIKE '%' || ? || '%'", q},
+	} {
+		ss, err := s.scanSymbols("WHERE "+a.cond+repoCond+" ORDER BY kind, file, line LIMIT 1", append([]any{a.val}, repoArgs...)...)
+		if err != nil {
+			return Symbol{}, false, err
+		}
+		if len(ss) > 0 {
+			return ss[0], true, nil
+		}
+	}
+	return Symbol{}, false, nil
+}
+
+// SymbolConn is one connection in an explain view: which way the edge points from the node, its
+// relation and confidence, and the neighbour it reaches.
+type SymbolConn struct {
+	Dir        string `json:"dir"` // out | in
+	Relation   string `json:"relation"`
+	Confidence string `json:"confidence"`
+	SID        string `json:"sid"`
+	Label      string `json:"label"`
+}
+
+// SymbolExplain is a node with its source, degree and connections — the graphify `explain` view.
+type SymbolExplain struct {
+	Symbol Symbol       `json:"symbol"`
+	Degree int          `json:"degree"`
+	Conns  []SymbolConn `json:"connections"`
+}
+
+// Explain resolves query to a symbol and returns it with its connections, each neighbour resolved to
+// its label. It is the todo-mcp side of `graphify explain`, over the ingested graph.
+func (s *Store) Explain(repo, query string) (*SymbolExplain, bool, error) {
+	sym, ok, err := s.FindSymbol(repo, query)
+	if err != nil || !ok {
+		return nil, ok, err
+	}
+	edges, err := s.SymbolEdges(sym.Repo, sym.SID)
+	if err != nil {
+		return nil, false, err
+	}
+	ex := &SymbolExplain{Symbol: sym, Degree: len(edges)}
+	for _, e := range edges {
+		c := SymbolConn{Relation: e.Relation, Confidence: e.Confidence}
+		if e.Source == sym.SID {
+			c.Dir, c.SID = "out", e.Target
+		} else {
+			c.Dir, c.SID = "in", e.Source
+		}
+		if n, ok, _ := s.GetSymbol(sym.Repo, c.SID); ok {
+			c.Label = n.Label
+		} else {
+			c.Label = c.SID
+		}
+		ex.Conns = append(ex.Conns, c)
+	}
+	return ex, true, nil
+}
+
 // SymbolEdges returns every edge touching sid in a repo — out of it or into it — which is a node's
 // neighbourhood for an explain view.
 func (s *Store) SymbolEdges(repo, sid string) ([]SymbolEdge, error) {
