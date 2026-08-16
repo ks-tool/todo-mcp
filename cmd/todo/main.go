@@ -102,13 +102,13 @@ func trailerCommands() []*cobra.Command {
 	}
 
 	list := &cobra.Command{
-		Use: "list [repo]", Short: "the trailer nodes in the cache, optionally by repo", Args: cobra.MaximumNArgs(1),
-		RunE: withStore(func(st *todo.Store, _ *cobra.Command, args []string) error {
+		Use: "list [repo]", Short: "the trailer nodes in the cache, optionally by repo and --tag", Args: cobra.MaximumNArgs(1),
+		RunE: withStore(func(st *todo.Store, cmd *cobra.Command, args []string) error {
 			repo := ""
 			if len(args) > 0 {
 				repo = args[0]
 			}
-			ts, err := st.Trailers(repo)
+			ts, err := st.TrailersFiltered(repo, splitComma(mustFlag(cmd, "tag")))
 			if err != nil {
 				return err
 			}
@@ -135,6 +135,7 @@ func trailerCommands() []*cobra.Command {
 		}),
 	}
 
+	list.Flags().String("tag", "", "only trailers carrying these tags (comma = AND); tags come from commit messages")
 	trailer.AddCommand(bind, epic, list)
 	return []*cobra.Command{trailer}
 }

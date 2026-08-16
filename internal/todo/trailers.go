@@ -3,6 +3,8 @@ package todo
 import (
 	"database/sql"
 	"encoding/json"
+	"regexp"
+	"strings"
 )
 
 // The derived layer: trailers are git commits cached as graph nodes. This file is their whole
@@ -55,7 +57,7 @@ func (s *Store) Reindex(dir, repo, rev string) (int, error) {
 	}
 	for _, c := range commits {
 		t := Trailer{SHA: c.SHA, Repo: repo, Subject: c.Subject, Body: c.Message,
-			Parents: c.Parents, At: c.Date}
+			Tags: tagsFromMessage(c.Message), Parents: c.Parents, At: c.Date}
 		if err := putTrailer(tx, t); err != nil {
 			return 0, err
 		}
@@ -73,11 +75,65 @@ func (s *Store) GetTrailer(sha string) (Trailer, bool, error) {
 }
 
 // Trailers lists the derived nodes, optionally narrowed to one repo ("" for all), newest first.
-func (s *Store) Trailers(repo string) ([]Trailer, error) {
+func (s *Store) Trailers(repo string) ([]Trailer, error) { return s.TrailersFiltered(repo, nil) }
+
+// TrailersFiltered narrows the derived nodes by repo and by tags — every tag must match, the way a
+// task list narrows. Trailer tags are the ones reindex parsed from the commit message, so this is
+// how the git-derived, shared slices become a filter.
+func (s *Store) TrailersFiltered(repo string, tags []string) ([]Trailer, error) {
+	var where []string
+	var args []any
 	if len(repo) > 0 {
-		return s.scanTrailers(`WHERE repo = ? ORDER BY at DESC`, repo)
+		where = append(where, "repo = ?")
+		args = append(args, repo)
 	}
-	return s.scanTrailers(`ORDER BY at DESC`)
+	for _, tag := range tags {
+		where = append(where, `tags LIKE '%"' || ? || '"%'`)
+		args = append(args, strings.ToLower(tag))
+	}
+	cond := ""
+	if len(where) > 0 {
+		cond = "WHERE " + strings.Join(where, " AND ") + " "
+	}
+	return s.scanTrailers(cond+"ORDER BY at DESC", args...)
+}
+
+// tagRef matches a #tag anywhere a word boundary allows — the loose form a commit author reaches
+// for. The dash and underscore let kebab and snake tags through; a leading digit is fine.
+var tagRef = regexp.MustCompile(`(?:^|\s)#([A-Za-z0-9][\w-]*)`)
+
+// tagsFromMessage pulls the cross-cutting tags a commit declares: a `Tags:` trailer line
+// (comma- or space-separated) and any `#tag` in the message. These are git-derived and shared —
+// unlike a task's locally-authored tags — so everyone reindexing the same history filters on the
+// same slices. Lower-casing and de-duplication happen on store (normTags).
+func tagsFromMessage(msg string) []string {
+	var out []string
+	for _, line := range strings.Split(msg, "\n") {
+		rest, ok := cutTagsTrailer(line)
+		if !ok {
+			continue
+		}
+		for _, f := range strings.FieldsFunc(rest, func(r rune) bool { return r == ',' || r == ' ' || r == '\t' }) {
+			out = append(out, strings.TrimPrefix(f, "#"))
+		}
+	}
+	for _, m := range tagRef.FindAllStringSubmatch(msg, -1) {
+		out = append(out, m[1])
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return normTags(out)
+}
+
+// cutTagsTrailer returns the value of a `Tags:` line (case-insensitive key at the line start), and
+// whether the line was one.
+func cutTagsTrailer(line string) (string, bool) {
+	line = strings.TrimSpace(line)
+	if i := strings.IndexByte(line, ':'); i >= 0 && strings.EqualFold(line[:i], "Tags") {
+		return line[i+1:], true
+	}
+	return "", false
 }
 
 // TruncateTrailers empties the derived layer — the first half of a reindex, which then rebuilds it

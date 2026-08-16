@@ -105,6 +105,46 @@ func TestTrailerEpicResolution(t *testing.T) {
 	}
 }
 
+// TestTagsFromMessage covers todomcp-12's parser: a Tags: trailer line and loose #hashtags both
+// contribute, lower-cased and de-duplicated, and a bare "# heading" (space after #) is not a tag.
+func TestTagsFromMessage(t *testing.T) {
+	msg := "feat: a thing #Auth\n\nsome body #api and a #api again\n# not-a-tag heading\nTags: contract, Auth, billing"
+	got := tagsFromMessage(msg)
+	slices.Sort(got)
+	want := []string{"api", "auth", "billing", "contract"}
+	if !slices.Equal(got, want) {
+		t.Errorf("tagsFromMessage = %v, want %v", got, want)
+	}
+	if len(tagsFromMessage("no tags here")) != 0 {
+		t.Error("a message with no tags must yield none")
+	}
+}
+
+// TestTrailerTagFilter covers todomcp-12's filter: reindex loads message tags onto the trailer, and
+// TrailersFiltered narrows by them, every tag having to match.
+func TestTrailerTagFilter(t *testing.T) {
+	st := openTemp(t)
+	must := func(err error) {
+		t.Helper()
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	must(st.PutTrailer(Trailer{SHA: "s1", Repo: "r", Subject: "one", Tags: []string{"auth", "api"}}))
+	must(st.PutTrailer(Trailer{SHA: "s2", Repo: "r", Subject: "two", Tags: []string{"auth"}}))
+	must(st.PutTrailer(Trailer{SHA: "s3", Repo: "r", Subject: "three", Tags: []string{"billing"}}))
+
+	if ts, _ := st.TrailersFiltered("", []string{"auth"}); len(ts) != 2 {
+		t.Errorf("one tag must match two, got %d", len(ts))
+	}
+	if ts, _ := st.TrailersFiltered("", []string{"auth", "api"}); len(ts) != 1 {
+		t.Errorf("two tags AND to one, got %d", len(ts))
+	}
+	if ts, _ := st.TrailersFiltered("", []string{"nope"}); len(ts) != 0 {
+		t.Errorf("an unused tag matches none, got %d", len(ts))
+	}
+}
+
 // TestReindexFromGit covers todomcp-04: reindex reads the log of main and rebuilds the trailer
 // cache — one node per commit, parents as edges — leaving the authored tasks alone, and a second
 // run is idempotent because it TRUNCATEs first.
