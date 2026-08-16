@@ -196,6 +196,21 @@ func TestEpicField(t *testing.T) {
 	}
 }
 
+// TestEmptyFilterHintsHiddenByStatus covers todomcp-23: filtering to an epic whose tasks are all
+// done, while the status filter is 'open', flashes that the tasks are hidden by status rather than
+// showing a blank, unexplained list.
+func TestEmptyFilterHintsHiddenByStatus(t *testing.T) {
+	m := tuiWith(t, todo.Task{ID: "p-01", Epic: "proj", Status: todo.StatusDone, Text: "shipped"})
+	m.epicF = "proj"
+	m.reload()
+	if len(m.tasks) != 0 {
+		t.Fatalf("expected an empty list under status:open, got %d", len(m.tasks))
+	}
+	if !strings.Contains(m.flash, "hidden by status") {
+		t.Errorf("expected a hint about tasks hidden by status, got %q", m.flash)
+	}
+}
+
 // TestEpicFilterNarrows covers todomcp-13: the TUI filter takes an epic, threaded into reload, and
 // 'p' opens the picker.
 func TestEpicFilterNarrows(t *testing.T) {

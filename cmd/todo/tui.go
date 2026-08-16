@@ -140,6 +140,14 @@ func (m *tui) reload() {
 			return
 		}
 		m.sortTasks()
+		// An empty list under a status filter is confusing when the epic/tag/search filter DOES have
+		// tasks, only in another status (e.g. an all-done project viewed as open). Say so, so the fix
+		// (press s) is obvious. The extra query runs only in this empty case, so it is cheap.
+		if !m.trash && len(m.tasks) == 0 && len(m.statusF) > 0 {
+			if any, _ := m.store.List(todo.Filter{Tags: m.tags, Epic: m.epicF, Search: m.search}); len(any) > 0 {
+				m.flash = fmt.Sprintf("%d task(s) here are hidden by status:%s — press s", len(any), m.statusF)
+			}
+		}
 		rows := make([]table.Row, len(m.tasks))
 		for i, t := range m.tasks {
 			rows[i] = table.Row{t.ID, t.Priority, strings.Join(t.Tags, ","), t.Epic}
