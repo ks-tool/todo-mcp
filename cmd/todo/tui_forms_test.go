@@ -32,10 +32,40 @@ func tuiWith(t *testing.T, tasks ...todo.Task) *tui {
 }
 
 func key(s string) tea.KeyMsg {
-	if s == "esc" {
+	switch s {
+	case "esc":
 		return tea.KeyMsg{Type: tea.KeyEsc}
+	case "ctrl+r":
+		return tea.KeyMsg{Type: tea.KeyCtrlR}
 	}
 	return tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(s)}
+}
+
+// TestCtrlRRefreshesFilteredList covers todomcp-11: a task added elsewhere while a filter is applied
+// is not in the list until ctrl+r re-reads it, and the selection is kept.
+func TestCtrlRRefreshesFilteredList(t *testing.T) {
+	m := tuiWith(t, todo.Task{ID: "a-01", Epic: "a", Status: todo.StatusOpen, Text: "one", Tags: []string{"x"}})
+	m.tags = []string{"x"}
+	m.reload()
+	if len(m.tasks) != 1 {
+		t.Fatalf("filtered list should hold 1, got %d", len(m.tasks))
+	}
+	sel, _ := m.selectedTask()
+
+	// A second matching task appears in the store, bypassing the TUI entirely.
+	if err := m.store.Put(todo.Task{ID: "a-02", Epic: "a", Status: todo.StatusOpen, Text: "two", Tags: []string{"x"}}); err != nil {
+		t.Fatal(err)
+	}
+	if len(m.tasks) != 1 {
+		t.Error("an external add must not appear until a refresh")
+	}
+	m.Update(key("ctrl+r"))
+	if len(m.tasks) != 2 {
+		t.Errorf("ctrl+r must pull in the new task under the filter, got %d", len(m.tasks))
+	}
+	if cur, ok := m.selectedTask(); !ok || cur.ID != sel.ID {
+		t.Errorf("refresh must keep the selection on %s, got %v/%q", sel.ID, ok, cur.ID)
+	}
 }
 
 // TestHelpAndStatusLineFits covers todomcp-19: '?' opens the full key help in the viewer, the rare

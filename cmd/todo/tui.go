@@ -162,6 +162,39 @@ func (m *tui) reload() {
 	m.rebuildDetail()
 }
 
+// refresh re-reads the list under the current filter, keeping the selected row by id. It is the
+// manual (ctrl+r) way to pull in tasks added elsewhere — an agent over MCP, another shell, a
+// different process — without re-applying the filter. reload alone resets the cursor to the top;
+// this restores it to the same task.
+func (m *tui) refresh() {
+	var selID string
+	if t, ok := m.selectedTask(); ok {
+		selID = t.ID
+	} else if d, ok := m.selectedDoc(); ok {
+		selID = d.ID
+	}
+	m.reload()
+	if len(selID) == 0 {
+		return
+	}
+	if m.mode == modeDocs {
+		for i, d := range m.docs {
+			if d.ID == selID {
+				m.table.SetCursor(i)
+				break
+			}
+		}
+	} else {
+		for i, t := range m.tasks {
+			if t.ID == selID {
+				m.table.SetCursor(i)
+				break
+			}
+		}
+	}
+	m.rebuildDetail()
+}
+
 func (m *tui) selectedTask() (todo.Task, bool) {
 	i := m.table.Cursor()
 	if m.mode != modeTasks || i < 0 || i >= len(m.tasks) {
@@ -270,6 +303,8 @@ func (m *tui) updateList(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if m.mode == modeTasks {
 			return m, m.openEpicFilter()
 		}
+	case "ctrl+r":
+		m.refresh()
 	case "1", "2", "3", "4":
 		col := int(msg.String()[0] - '1')
 		if m.mode == modeDocs && col > 2 {
@@ -444,6 +479,7 @@ const helpText = "# Keys\n\n" +
 	"- `f` — filter by tag\n" +
 	"- `p` — filter by epic\n" +
 	"- `s` — cycle status\n" +
+	"- `ctrl+r` — refresh the list (pull in tasks added elsewhere)\n" +
 	"- `t` — trash\n" +
 	"- `1`–`4` — sort by that column (repeat flips direction, `0` restores the store's order)\n" +
 	"- `v` — full-screen view\n" +
