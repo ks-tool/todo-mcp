@@ -319,6 +319,19 @@ func runMCP(st *todo.Store) error {
 			return textResult(fmt.Sprintf("reindexed %d commits", n)), countOut{Count: n}, err
 		})
 
+	mcp.AddTool(s, &mcp.Tool{Name: "todo_path",
+		Description: "Shortest chain of edges between two nodes. a and b are each a task id, a commit sha (full or a 7+ char prefix), a doc id, or a full-text phrase resolved to the node that mentions it most. Edges: commit (task↔trailer), parent (trailer↔trailer), dep (task↔task), doc (task/doc↔doc). epic and tag scope which nodes take part."},
+		func(_ context.Context, _ *mcp.CallToolRequest, in pathIn) (*mcp.CallToolResult, pathOut, error) {
+			p, ok, err := st.Path(in.A, in.B, todo.PathScope{Epic: in.Epic, Tags: splitComma(in.Tag)})
+			if err != nil {
+				return result(0), pathOut{}, err
+			}
+			if !ok {
+				return textResult("no path"), pathOut{}, nil
+			}
+			return textResult(fmt.Sprintf("%d step(s)", len(p.Steps))), pathOut{Path: p}, nil
+		})
+
 	// A best-effort reindex at start-up, so the server's graph reflects the history without waiting
 	// for a hook or a manual call. The server runs in the project root, so "." is the repo; any
 	// failure (not a git repo, no main) is a note on stderr, never a reason not to serve.
@@ -423,6 +436,15 @@ type reindexIn struct {
 	Dir  string `json:"dir,omitempty"`
 	Rev  string `json:"rev,omitempty"`
 	Repo string `json:"repo,omitempty"`
+}
+type pathIn struct {
+	A    string `json:"a"`
+	B    string `json:"b"`
+	Epic string `json:"epic,omitempty"`
+	Tag  string `json:"tag,omitempty"`
+}
+type pathOut struct {
+	Path *todo.Path `json:"path,omitempty"`
 }
 
 type docOut struct {

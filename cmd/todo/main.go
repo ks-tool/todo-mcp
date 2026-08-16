@@ -54,8 +54,59 @@ Output is a table at a terminal, JSON Lines into a pipe or under --json. Exit: 0
 	root.AddCommand(taskCommands()...)
 	root.AddCommand(wikiCommands()...)
 	root.AddCommand(trailerCommands()...)
+	root.AddCommand(pathCommand())
 	root.AddCommand(frontCommands()...)
 	return root
+}
+
+// pathCommand walks the graph: the shortest chain of edges between two nodes, which is how a person
+// asks "how do these relate" — an intent to the commits behind it, a commit to its ancestry.
+func pathCommand() *cobra.Command {
+	c := &cobra.Command{
+		Use:   "path <A> <B>",
+		Short: "shortest chain of edges between two nodes (task/commit/doc)",
+		Long: `Resolve A and B — each a task id, a commit sha (full or a 7+ char prefix), a doc id, or a
+full-text phrase resolved to the node that mentions it most — and print the shortest path between
+them: a task to the commits that closed it (commit), a commit to its parents (parent), a task to its
+dependencies (dep), a task or a doc to the pages it links (doc). --epic and --tag scope the nodes.`,
+		Args: cobra.ExactArgs(2),
+		RunE: withStore(func(st *todo.Store, cmd *cobra.Command, args []string) error {
+			scope := todo.PathScope{Epic: mustFlag(cmd, "epic"), Tags: splitComma(mustFlag(cmd, "tag"))}
+			p, ok, err := st.Path(args[0], args[1], scope)
+			if err != nil {
+				return err
+			}
+			if !ok {
+				fmt.Fprintln(os.Stderr, "no path")
+				os.Exit(2)
+			}
+			if jsonOut() {
+				enc := json.NewEncoder(os.Stdout)
+				enc.SetIndent("", "  ")
+				return enc.Encode(p)
+			}
+			printPath(p)
+			return nil
+		}),
+	}
+	c.Flags().String("epic", "", "restrict the path to one epic")
+	c.Flags().String("tag", "", "restrict the path to these tags (comma = AND)")
+	return c
+}
+
+func printPath(p *todo.Path) {
+	fmt.Println(pathNodeLine(p.Start))
+	for _, s := range p.Steps {
+		fmt.Printf("  ─%s→ %s\n", s.Edge, pathNodeLine(s.Node))
+	}
+}
+
+func pathNodeLine(n todo.PathNode) string {
+	h := n.ID
+	if n.Kind == todo.KindTrailer {
+		h = shortref(n.ID)
+	}
+	return fmt.Sprintf("%-8s %-26s %s", n.Kind, h, oneLine(n.Label, 60))
 }
 
 // trailerCommands operate on the derived layer's nodes — the git commits reindex projects into the
