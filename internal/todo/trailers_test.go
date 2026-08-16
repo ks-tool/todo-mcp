@@ -145,6 +145,64 @@ func TestTrailerTagFilter(t *testing.T) {
 	}
 }
 
+// TestReindexIsPerRepo covers todomcp-21: reindexing one repo drops and rebuilds only its own
+// trailers and files, leaving another project's graph in the same database untouched.
+func TestReindexIsPerRepo(t *testing.T) {
+	dir := t.TempDir()
+	git := func(args ...string) {
+		t.Helper()
+		cmd := exec.Command("git", append([]string{"-C", dir}, args...)...)
+		cmd.Env = append(os.Environ(),
+			"GIT_AUTHOR_NAME=t", "GIT_AUTHOR_EMAIL=t@t", "GIT_COMMITTER_NAME=t", "GIT_COMMITTER_EMAIL=t@t")
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %v\n%s", args, err, out)
+		}
+	}
+	git("init", "-b", "main")
+	if err := os.WriteFile(filepath.Join(dir, "a.go"), []byte("package a"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	git("add", "-A")
+	git("commit", "-m", "feat: mine")
+
+	st := openTemp(t)
+	// Another project's trailer and file already live in this shared database.
+	if err := st.PutTrailer(Trailer{SHA: "othersha", Repo: "other", Subject: "keep me"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := st.db.Exec(`INSERT INTO trailer_files (sha, path) VALUES (?,?)`, "othersha", "other/f.go"); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := st.Reindex(dir, "mine", "main"); err != nil {
+		t.Fatal(err)
+	}
+	if ok, _ := st.HasTrailer("othersha"); !ok {
+		t.Error("reindexing 'mine' must not drop 'other' trailers")
+	}
+	var files int
+	if err := st.db.QueryRow(`SELECT count(*) FROM trailer_files WHERE sha = 'othersha'`).Scan(&files); err != nil {
+		t.Fatal(err)
+	}
+	if files != 1 {
+		t.Errorf("another repo's trailer_files must survive, got %d", files)
+	}
+	if ts, _ := st.Trailers("mine"); len(ts) != 1 {
+		t.Errorf("this repo's trailers must be built, got %d", len(ts))
+	}
+
+	// A second reindex of 'mine' stays idempotent and still leaves 'other' alone.
+	if _, err := st.Reindex(dir, "mine", "main"); err != nil {
+		t.Fatal(err)
+	}
+	if ts, _ := st.Trailers("mine"); len(ts) != 1 {
+		t.Errorf("re-reindex doubled 'mine', got %d", len(ts))
+	}
+	if ts, _ := st.Trailers("other"); len(ts) != 1 {
+		t.Errorf("'other' must still be present, got %d", len(ts))
+	}
+}
+
 // TestReindexFromGit covers todomcp-04: reindex reads the log of main and rebuilds the trailer
 // cache — one node per commit, parents as edges — leaving the authored tasks alone, and a second
 // run is idempotent because it TRUNCATEs first.

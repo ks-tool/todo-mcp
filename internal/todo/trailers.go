@@ -41,7 +41,9 @@ ON CONFLICT(sha) DO UPDATE SET repo=excluded.repo, subject=excluded.subject, bod
 // label a trailer resolves its epic through when nothing local overrides it. Returns the node count.
 //
 // It is whole-history each time, not incremental: correct is cheaper to keep than clever, and a
-// TRUNCATE+rebuild cannot drift the way a patched cache can.
+// rebuild cannot drift the way a patched cache can. The rebuild is scoped to THIS repo — only its
+// trailers and their files are dropped and re-inserted — so one database can hold several projects
+// and reindexing one never wipes another's graph.
 func (s *Store) Reindex(dir, repo, rev string) (int, error) {
 	commits, err := LogCommits(dir, rev)
 	if err != nil {
@@ -56,10 +58,12 @@ func (s *Store) Reindex(dir, repo, rev string) (int, error) {
 		return 0, err
 	}
 	defer func() { _ = tx.Rollback() }()
-	if _, err := tx.Exec(`DELETE FROM trailers`); err != nil {
+	// Files first: they are keyed by sha, so the shas to drop must still be resolvable from the
+	// trailers table when this runs.
+	if _, err := tx.Exec(`DELETE FROM trailer_files WHERE sha IN (SELECT sha FROM trailers WHERE repo = ?)`, repo); err != nil {
 		return 0, err
 	}
-	if _, err := tx.Exec(`DELETE FROM trailer_files`); err != nil {
+	if _, err := tx.Exec(`DELETE FROM trailers WHERE repo = ?`, repo); err != nil {
 		return 0, err
 	}
 	for _, c := range commits {
