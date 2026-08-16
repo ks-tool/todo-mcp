@@ -46,11 +46,14 @@ bridged at the file level: a symbol's source file is the same file node a commit
 path` can run from an intent to a symbol:
 
 ```
-$ todo path <commit-sha> IngestGraph
-trailer  "graphify: symbols and code edges join the path graph"
-  --file--> file internal/todo/symbols.go
-  --file--> symbol .IngestGraph()
+$ todo path 523366a IngestGraph
+trailer   523366a  graphify: symbols and code edges join the p…  @todo-mcp
+  ─file→ file      internal/todo/symbols.go
+  ─file→ symbol    .IngestGraph()  @todo-mcp
 ```
+
+Each node that belongs to a service carries it as `@repo` — here everything is in `@todo-mcp`; across
+two services the marker is what shows the path leaving one and entering the other.
 
 `todo path A B` resolves each end as a task id, a commit sha, a doc id, a file path, an exact symbol
 name, or — failing those — a full-text phrase, and returns the shortest chain of edges between them.

@@ -34,13 +34,18 @@ todo --db "$DB" path orders:place_order users:SaveUser
 ## The path
 
 ```
-symbol    place_order()                        # Python
-  --calls   -> symbol    create_user()          # Python client (snake_case)
-  --endpoint-> endpoint  POST /users (orders)    # bound: createUser ≈ create_user
-  --boundary-> endpoint  POST /users (users)     # the network hop
-  --endpoint-> symbol    CreateUser()           # Go handler (PascalCase), bound the same way
-  --calls   -> symbol    SaveUser()             # Go store
+symbol    place_order()  @orders
+  ─calls→ symbol    create_user()  @orders
+  ─endpoint→ endpoint  POST /users  @orders
+  ─boundary→ endpoint  POST /users  @users
+  ─endpoint→ symbol    CreateUser()  @users
+  ─calls→ symbol    SaveUser()  @users
 ```
+
+Every node carries its service as `@repo`, so you can see the hop leave `@orders` and arrive in
+`@users`: `place_order` and `create_user` are the Python orders service; `CreateUser` and `SaveUser`
+are the Go users service; the `boundary` edge between the two `POST /users` endpoints is the network
+call.
 
 The API's operationId is `createUser`; the Python client function is `create_user` and the Go handler
 is `CreateUser`. `todo endpoints` binds an operationId to a symbol on a **normalized** name — case and

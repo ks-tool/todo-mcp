@@ -14,8 +14,9 @@ import (
 // PathNode is one node on a path — its kind, its handle (task id, trailer sha, or doc id) and a
 // short label to read it by.
 type PathNode struct {
-	Kind  string `json:"kind"` // task | trailer | doc
+	Kind  string `json:"kind"` // task | trailer | doc | file | symbol | endpoint
 	ID    string `json:"id"`
+	Repo  string `json:"repo,omitempty"` // which service/repo the node belongs to, where it has one
 	Label string `json:"label"`
 }
 
@@ -39,10 +40,10 @@ type PathScope struct {
 }
 
 const (
-	edgeCommit = "commit" // task — trailer, the commit that closed the task
-	edgeParent = "parent" // trailer — trailer, git ancestry
-	edgeDep    = "dep"    // task — task, a dependency edge
-	edgeDoc    = "doc"    // task — doc / doc — doc, a wiki link
+	edgeCommit   = "commit"   // task — trailer, the commit that closed the task
+	edgeParent   = "parent"   // trailer — trailer, git ancestry
+	edgeDep      = "dep"      // task — task, a dependency edge
+	edgeDoc      = "doc"      // task — doc / doc — doc, a wiki link
 	edgeFile     = "file"     // trailer — file (changed) / task — file (touchpoint)
 	edgeEndpoint = "endpoint" // endpoint — symbol (the code that implements or calls it)
 	edgeBoundary = "boundary" // endpoint — endpoint across repos (a contract match; the network hop)
@@ -316,7 +317,7 @@ const KindEndpoint = "endpoint"
 
 func endpointNode(e StoredEndpoint) PathNode {
 	return PathNode{Kind: KindEndpoint, ID: e.Repo + ":" + e.Method + " " + e.Path,
-		Label: e.Method + " " + e.Path + " (" + e.Repo + ")"}
+		Repo: e.Repo, Label: e.Method + " " + e.Path}
 }
 
 const (
@@ -326,7 +327,7 @@ const (
 
 func fileNode(path string) PathNode { return PathNode{Kind: KindFile, ID: path, Label: path} }
 func symbolNode(sym Symbol) PathNode {
-	return PathNode{Kind: KindSymbol, ID: sym.SID, Label: sym.Label}
+	return PathNode{Kind: KindSymbol, ID: sym.SID, Repo: sym.Repo, Label: sym.Label}
 }
 
 // linkDoc joins a source node to a doc by id, materializing the doc node from the store so it reads
@@ -345,7 +346,7 @@ func taskNode(t Task) PathNode {
 	return PathNode{Kind: KindTask, ID: t.ID, Label: oneLineLabel(t.Text)}
 }
 func trailerNode(t Trailer) PathNode {
-	return PathNode{Kind: KindTrailer, ID: t.SHA, Label: t.Subject}
+	return PathNode{Kind: KindTrailer, ID: t.SHA, Repo: t.Repo, Label: t.Subject}
 }
 func docNode(d Doc) PathNode {
 	return PathNode{Kind: KindDoc, ID: d.ID, Label: d.Title}

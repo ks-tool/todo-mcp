@@ -304,11 +304,21 @@ func printPath(p *todo.Path) {
 }
 
 func pathNodeLine(n todo.PathNode) string {
-	h := n.ID
-	if n.Kind == todo.KindTrailer {
-		h = shortref(n.ID)
+	handle, desc := n.ID, n.Label
+	switch n.Kind {
+	case todo.KindTrailer:
+		handle = shortref(n.ID)
+	case todo.KindSymbol, todo.KindEndpoint, todo.KindFile:
+		handle, desc = n.Label, "" // the label is the readable handle; the id is noise
 	}
-	return fmt.Sprintf("%-8s %-26s %s", n.Kind, h, oneLine(n.Label, 60))
+	line := fmt.Sprintf("%-9s %s", n.Kind, oneLine(handle, 44))
+	if len(desc) > 0 {
+		line += "  " + oneLine(desc, 44)
+	}
+	if len(n.Repo) > 0 {
+		line += "  @" + n.Repo
+	}
+	return line
 }
 
 // trailerCommands operate on the derived layer's nodes — the git commits reindex projects into the
