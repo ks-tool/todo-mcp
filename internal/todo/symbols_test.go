@@ -98,6 +98,23 @@ func TestIngestGraph(t *testing.T) {
 		t.Error("a missing node must not resolve")
 	}
 
+	// A method's label carries graphify's leading-dot form (.Name()); the bare name must still
+	// resolve it, both for the anchored path resolver and for explain.
+	mgraph := `{"nodes":[{"id":"s_do","label":".DoThing()","file_type":"code","source_file":"x.go","source_location":"L3"}],"links":[]}`
+	pm := filepath.Join(t.TempDir(), "m.json")
+	if err := os.WriteFile(pm, []byte(mgraph), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := st.IngestGraph("svc", pm); err != nil {
+		t.Fatal(err)
+	}
+	if sym, ok, _ := st.symbolByName("DoThing"); !ok || sym.SID != "s_do" {
+		t.Errorf("bare name must resolve a .method() label: ok=%v", ok)
+	}
+	if _, ok, _ := st.symbolByName("nope-not-a-symbol"); ok {
+		t.Error("symbolByName must not match a loose substring")
+	}
+
 	// Re-ingesting 'mine' with fewer nodes replaces, not accumulates.
 	small := `{"nodes":[{"id":"a_helpers","label":"helpers.go","file_type":"code","source_file":"a/helpers.go","source_location":"L1"}],"links":[]}`
 	ps := filepath.Join(t.TempDir(), "small.json")

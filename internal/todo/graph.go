@@ -348,12 +348,13 @@ func (s *Store) resolveNode(ref string) (PathNode, bool, error) {
 	} else if ok {
 		return fileNode(ref), true, nil
 	}
-	// An exact symbol id or label (with or without "()") — but not a substring, so a fuzzy phrase
-	// still falls through to full-text rather than latching onto a coincidental symbol name.
-	if ss, err := s.scanSymbols(`WHERE sid = ? OR lower(label) = lower(?) OR lower(label) = lower(?) LIMIT 1`, ref, ref, ref+"()"); err != nil {
+	// An exact symbol: the id, the whole label, or the callable name — plain `name()`, a method
+	// `.name()`, or a qualified `Type.name()`. All anchored (never a loose substring), so a fuzzy
+	// phrase still falls through to full-text rather than latching onto a coincidental symbol name.
+	if sym, ok, err := s.symbolByName(ref); err != nil {
 		return PathNode{}, false, err
-	} else if len(ss) > 0 {
-		return symbolNode(ss[0]), true, nil
+	} else if ok {
+		return symbolNode(sym), true, nil
 	}
 	return s.resolveByText(ref)
 }

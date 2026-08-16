@@ -95,16 +95,17 @@ func (s *Store) FindSymbol(repo, query string) (Symbol, bool, error) {
 	if len(repo) > 0 {
 		repoCond, repoArgs = " AND repo = ?", []any{repo}
 	}
-	for _, a := range []struct {
-		cond string
-		val  string
-	}{
-		{"sid = ?", q},
-		{"lower(label) = lower(?)", q},
-		{"lower(label) = lower(?)", q + "()"},
-		{"label LIKE '%' || ? || '%'", q},
+	// Anchored forms first (id, whole label, the callable name in its plain / method / qualified
+	// spellings), then a loose substring as the last resort.
+	for _, cond := range []string{
+		"sid = ?",
+		"lower(label) = lower(?)",
+		"lower(label) = lower(? || '()')",
+		"lower(label) = lower('.' || ? || '()')",
+		"lower(label) LIKE lower('%.' || ? || '()')",
+		"label LIKE '%' || ? || '%'",
 	} {
-		ss, err := s.scanSymbols("WHERE "+a.cond+repoCond+" ORDER BY kind, file, line LIMIT 1", append([]any{a.val}, repoArgs...)...)
+		ss, err := s.scanSymbols("WHERE "+cond+repoCond+" ORDER BY kind, file, line LIMIT 1", append([]any{q}, repoArgs...)...)
 		if err != nil {
 			return Symbol{}, false, err
 		}
@@ -113,6 +114,23 @@ func (s *Store) FindSymbol(repo, query string) (Symbol, bool, error) {
 		}
 	}
 	return Symbol{}, false, nil
+}
+
+// symbolByName is FindSymbol without the loose substring — an anchored match on the callable name in
+// any repo. It is what path resolution uses, so a fuzzy phrase falls through to full-text search
+// instead of latching onto a symbol whose name merely contains the words.
+func (s *Store) symbolByName(query string) (Symbol, bool, error) {
+	q := strings.TrimSpace(query)
+	ss, err := s.scanSymbols(`WHERE sid = ?
+   OR lower(label) = lower(?)
+   OR lower(label) = lower(? || '()')
+   OR lower(label) = lower('.' || ? || '()')
+   OR lower(label) LIKE lower('%.' || ? || '()')
+ORDER BY kind, file, line LIMIT 1`, q, q, q, q, q)
+	if err != nil || len(ss) == 0 {
+		return Symbol{}, false, err
+	}
+	return ss[0], true, nil
 }
 
 // SymbolConn is one connection in an explain view: which way the edge points from the node, its
