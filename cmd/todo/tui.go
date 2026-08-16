@@ -27,7 +27,7 @@ import (
 // where r restores it. There is no hard delete in the interface at all.
 //
 // Keys — list: ↑/↓ move · Enter/e edit · a add · d delete · v full-screen view · / search ·
-// f cycle the tag filter · s cycle status · t trash · c commit · l link a doc · w wiki ·
+// f cycle the tag filter · s cycle status · t trash · c commit · m comment · l link a doc · w wiki ·
 // 1–4 sort by that column (the same digit flips the direction, 0 restores the store's order) ·
 // Tab focus the detail · q quit. Detail: ↑/↓ scroll · n/p walk links · Enter follow · Tab/Esc
 // back. In the trash: r restore.
@@ -149,7 +149,11 @@ func (m *tui) reload() {
 	// two lines now that the columns and styles exist — so the table comes out exactly as tall as
 	// the bordered detail pane beside it.
 	m.table.SetHeight(m.paneHeight() + 2)
-	if m.table.Cursor() >= len(m.table.Rows()) {
+	// Clearing the rows above (SetRows(nil), to reshape the columns safely) leaves bubbles' cursor at
+	// -1; a negative cursor is as out of range as one past the end, so restore it to the first row —
+	// otherwise nothing is selected after a reload and the detail pane and every selection-driven key
+	// go dead until the user presses ↓.
+	if c := m.table.Cursor(); c < 0 || c >= len(m.table.Rows()) {
 		m.table.SetCursor(0)
 	}
 	m.rebuildDetail()
@@ -288,6 +292,10 @@ func (m *tui) updateList(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "l":
 		if t, ok := m.selectedTask(); ok {
 			return m, m.openLinkForm(t)
+		}
+	case "m":
+		if t, ok := m.selectedTask(); ok {
+			return m, m.openCommentForm(t)
 		}
 	default:
 		var cmd tea.Cmd
@@ -626,6 +634,11 @@ func (m *tui) detailContent() string {
 	writeln("")
 	writeln(m.markdown(t.Text))
 
+	if len(t.DoneNote) > 0 {
+		writeln(stSect.Render("note"))
+		writeln("  " + t.DoneNote)
+		writeln("")
+	}
 	if len(t.DependsOn) > 0 {
 		writeln(stSect.Render("blocked by"))
 		for _, depID := range t.DependsOn {
@@ -784,6 +797,6 @@ func (m *tui) statusLine() string {
 		n = len(m.docs)
 	}
 	return stStatus.Render(fmt.Sprintf(
-		" %s  tag:%s  status:%s%s  |  %d shown  |  a add · e edit · d del · c commit · l link · t trash · s status · f tag · 1-4 sort · Tab detail · / search · v view · w wiki · q quit",
+		" %s  tag:%s  status:%s%s  |  %d shown  |  a add · e edit · d del · c commit · m comment · l link · t trash · s status · f tag · 1-4 sort · Tab detail · / search · v view · w wiki · q quit",
 		scope, tag, stf, srch, n))
 }

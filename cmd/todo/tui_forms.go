@@ -133,6 +133,20 @@ func (m *tui) openDocForm(d *todo.Doc) tea.Cmd {
 	})
 }
 
+// openCommentForm edits a task's comment (its done_note). It works on a DONE task without reopening
+// it — SetNote never touches status — so a note can be added or corrected after the work shipped.
+func (m *tui) openCommentForm(t todo.Task) tea.Cmd {
+	note := t.DoneNote
+	f := huh.NewForm(huh.NewGroup(
+		huh.NewText().Title("comment → " + t.ID).Value(&note).Lines(6),
+	))
+	return m.openForm(f, func() {
+		if _, err := m.store.SetNote(t.ID, note); err != nil {
+			m.flash = err.Error()
+		}
+	})
+}
+
 func (m *tui) openCommitForm(t todo.Task) tea.Cmd {
 	var sha, subject string
 	f := huh.NewForm(huh.NewGroup(
