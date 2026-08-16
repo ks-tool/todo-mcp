@@ -70,7 +70,7 @@ Output is a table at a terminal, JSON Lines into a pipe or under --json. Exit: 0
 func contractCommand() *cobra.Command {
 	return &cobra.Command{
 		Use:   "contract <consumer-spec> <provider-spec>",
-		Short: "check an API contract between two specs (OpenAPI JSON/YAML, or a gRPC .proto)",
+		Short: "check an API contract (OpenAPI JSON/YAML, gRPC .proto, or GraphQL SDL)",
 		Long: `Compare what a CONSUMER expects (the provider spec it was built against) against what the
 PROVIDER now offers, and report contract breaks: an endpoint the consumer needs that the provider
 dropped (orphan-call), or one whose request/response shape diverged (schema-drift). Exit 0 when the
@@ -1145,7 +1145,7 @@ func emitSchema() {
 			"symbols":      "<dir> [--graph --repo] — extract code symbols via graphify and ingest them",
 			"path":         "<A> <B> [--epic --tag] — shortest chain of edges between two nodes",
 			"explain":      "<node> [--repo] — a code symbol's source, degree and connections",
-			"contract":     "<consumer-spec> <provider-spec> — check an API contract (OpenAPI JSON/YAML, or gRPC .proto)",
+			"contract":     "<consumer-spec> <provider-spec> — check an API contract (OpenAPI JSON/YAML, gRPC .proto, GraphQL SDL)",
 			"trailer":      "bind|epic|list — the git commits reindex projects into the graph",
 		},
 		"output": "JSON Lines under --json or into a pipe; exit 0 found / 2 empty / 1 error",

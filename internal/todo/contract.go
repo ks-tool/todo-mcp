@@ -88,8 +88,12 @@ func compareEndpoints(consumer, provider map[string]Endpoint) *Contract {
 // endpointsFromFile reduces one spec file to its endpoints, picking the parser by format: a .proto
 // by extension, otherwise an OpenAPI JSON/YAML document.
 func endpointsFromFile(path string) (map[string]Endpoint, error) {
-	if strings.HasSuffix(strings.ToLower(path), ".proto") {
+	lower := strings.ToLower(path)
+	switch {
+	case strings.HasSuffix(lower, ".proto"):
 		return protoEndpointsFile(path)
+	case strings.HasSuffix(lower, ".graphql"), strings.HasSuffix(lower, ".graphqls"), strings.HasSuffix(lower, ".gql"):
+		return graphqlEndpointsFile(path)
 	}
 	sp, err := loadSpec(path)
 	if err != nil {
