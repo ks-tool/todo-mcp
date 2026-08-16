@@ -64,6 +64,7 @@ todo endpoints <spec> --repo <r>    # ingest a service's API endpoints, bound to
 todo explain <node>                 # a symbol's source, degree and connections
 todo contract <consumer> <provider> # check an API contract (see contract.md)
 todo path serviceA:Fn serviceB:Fn   # a path across two services (see cross-service.md)
+todo path <A> <B> --mermaid         # render the path as a Mermaid flowchart (services as subgraphs)
 ```
 
 ## Backup

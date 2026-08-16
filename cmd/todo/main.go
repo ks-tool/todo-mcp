@@ -282,6 +282,10 @@ dependencies (dep), a task or a doc to the pages it links (doc). --epic and --ta
 				fmt.Fprintln(os.Stderr, "no path")
 				os.Exit(2)
 			}
+			if mustBool(cmd, "mermaid") {
+				fmt.Print(pathMermaid(p))
+				return nil
+			}
 			if jsonOut() {
 				enc := json.NewEncoder(os.Stdout)
 				enc.SetIndent("", "  ")
@@ -293,6 +297,7 @@ dependencies (dep), a task or a doc to the pages it links (doc). --epic and --ta
 	}
 	c.Flags().String("epic", "", "restrict the path to one epic")
 	c.Flags().String("tag", "", "restrict the path to these tags (comma = AND)")
+	c.Flags().Bool("mermaid", false, "render the path as a Mermaid flowchart (services as subgraphs)")
 	return c
 }
 
@@ -303,13 +308,26 @@ func printPath(p *todo.Path) {
 	}
 }
 
-func pathNodeLine(n todo.PathNode) string {
-	handle, desc := n.ID, n.Label
+// pathHandle is a node's readable, human-facing name: the label where the id is noise (symbols,
+// endpoints, files), a short sha for a trailer, the id otherwise. Shared by the text and Mermaid
+// renderers so the two never drift.
+func pathHandle(n todo.PathNode) string {
 	switch n.Kind {
 	case todo.KindTrailer:
-		handle = shortref(n.ID)
+		return shortref(n.ID)
 	case todo.KindSymbol, todo.KindEndpoint, todo.KindFile:
-		handle, desc = n.Label, "" // the label is the readable handle; the id is noise
+		return n.Label
+	default:
+		return n.ID
+	}
+}
+
+func pathNodeLine(n todo.PathNode) string {
+	handle := pathHandle(n)
+	desc := n.Label
+	switch n.Kind {
+	case todo.KindSymbol, todo.KindEndpoint, todo.KindFile:
+		desc = "" // handle already is the label; no separate description
 	}
 	line := fmt.Sprintf("%-9s %s", n.Kind, oneLine(handle, 44))
 	if len(desc) > 0 {
@@ -319,6 +337,75 @@ func pathNodeLine(n todo.PathNode) string {
 		line += "  @" + n.Repo
 	}
 	return line
+}
+
+// pathMermaid renders a path as a Mermaid flowchart: each service (repo) becomes a subgraph titled
+// "@repo", so the hop out of one service and into another reads at a glance; the boundary edge — the
+// network call — is drawn dotted to set it apart from in-process edges.
+func pathMermaid(p *todo.Path) string {
+	nodes := append([]todo.PathNode{p.Start}, func() []todo.PathNode {
+		ns := make([]todo.PathNode, len(p.Steps))
+		for i, s := range p.Steps {
+			ns[i] = s.Node
+		}
+		return ns
+	}()...)
+
+	byRepo := map[string][]int{}
+	var repoOrder []string
+	for i, n := range nodes {
+		if _, ok := byRepo[n.Repo]; !ok && n.Repo != "" {
+			repoOrder = append(repoOrder, n.Repo)
+		}
+		byRepo[n.Repo] = append(byRepo[n.Repo], i)
+	}
+	decl := func(i int) string {
+		n := nodes[i]
+		return fmt.Sprintf("n%d[\"%s<br/><i>%s</i>\"]", i, mermaidText(pathHandle(n)), mermaidText(n.Kind))
+	}
+
+	var b strings.Builder
+	b.WriteString("flowchart LR\n")
+	for _, repo := range repoOrder {
+		fmt.Fprintf(&b, "  subgraph %s[\"%s\"]\n", mermaidID(repo), mermaidText("@"+repo))
+		for _, i := range byRepo[repo] {
+			fmt.Fprintf(&b, "    %s\n", decl(i))
+		}
+		b.WriteString("  end\n")
+	}
+	for _, i := range byRepo[""] { // nodes with no service (files, plain tasks/docs)
+		fmt.Fprintf(&b, "  %s\n", decl(i))
+	}
+	for i, s := range p.Steps {
+		arrow := "-->"
+		if s.Edge == "boundary" {
+			arrow = "-.->" // the network hop, drawn dotted
+		}
+		fmt.Fprintf(&b, "  n%d %s|%s| n%d\n", i, arrow, mermaidText(s.Edge), i+1)
+	}
+	return b.String()
+}
+
+// mermaidText escapes a string for use inside a Mermaid ["…"] label; the <br/> and <i> tags the
+// renderer injects are added around it, not by it.
+func mermaidText(s string) string {
+	r := strings.NewReplacer("&", "&amp;", "<", "&lt;", ">", "&gt;", "\"", "&quot;")
+	return r.Replace(s)
+}
+
+// mermaidID turns a repo name into a safe Mermaid node id (subgraph handle); the real name is shown
+// via the quoted title, so this only has to be unique and identifier-clean.
+func mermaidID(repo string) string {
+	var b strings.Builder
+	b.WriteString("svc_")
+	for _, r := range repo {
+		if r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z' || r >= '0' && r <= '9' {
+			b.WriteRune(r)
+		} else {
+			b.WriteByte('_')
+		}
+	}
+	return b.String()
 }
 
 // trailerCommands operate on the derived layer's nodes — the git commits reindex projects into the

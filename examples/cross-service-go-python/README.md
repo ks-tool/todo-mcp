@@ -52,5 +52,33 @@ is `CreateUser`. `todo endpoints` binds an operationId to a symbol on a **normal
 separators dropped — so all three collapse to `createuser` and bind. That is what makes the path cross
 languages as well as the network.
 
+## As a Mermaid diagram
+
+`--mermaid` renders the same path as a flowchart. Each service is a subgraph, so the boundary is a box
+you cross; the `boundary` edge — the network call — is drawn dotted.
+
+```sh
+todo --db "$DB" path orders:place_order users:SaveUser --mermaid
+```
+
+```mermaid
+flowchart LR
+  subgraph svc_orders["@orders"]
+    n0["place_order()<br/><i>symbol</i>"]
+    n1["create_user()<br/><i>symbol</i>"]
+    n2["POST /users<br/><i>endpoint</i>"]
+  end
+  subgraph svc_users["@users"]
+    n3["POST /users<br/><i>endpoint</i>"]
+    n4["CreateUser()<br/><i>symbol</i>"]
+    n5["SaveUser()<br/><i>symbol</i>"]
+  end
+  n0 -->|calls| n1
+  n1 -->|endpoint| n2
+  n2 -.->|boundary| n3
+  n3 -->|endpoint| n4
+  n4 -->|calls| n5
+```
+
 `server.go` carries `//go:build ignore` so it stays out of this module's build; graphify parses it all
 the same. See [docs/cross-service.md](../../docs/cross-service.md).
