@@ -1,31 +1,32 @@
 # Cross-service path — a Go server and a Python client
 
-The same idea as the [first example](../cross-service/), but **across two languages**: the users
-service is a Go HTTP server, and the orders service calls it from Python. `todo path` runs from a
-Python function, over the network boundary, into a Go function.
+`todo path` runs from a Python function, over the network boundary, into a Go function. The users
+service is a Go HTTP server; the orders service calls it from Python.
 
 ```
-client-py/  (repo: orders)                    server-go/  (repo: users)
-  client.py   place_order → create_user         server.go   CreateUser → SaveUser
-  graph.json  place_order() → create_user()     graph.json  CreateUser() → SaveUser()
-  openapi.yaml  POST /users  createUser          openapi.yaml  POST /users  createUser
+client-py/  (repo: orders)          server-go/  (repo: users)
+  client.py   place_order → create_user     server.go     CreateUser → SaveUser
+                                            openapi.yaml  POST /users  operationId: createUser
 ```
 
-The interesting part is the binding. The API's operationId is `createUser`, but the Python client
-function is idiomatic `create_user` and the Go handler is `CreateUser`. `todo endpoints` matches an
-operationId to a symbol on a **normalized** name — case and separators dropped — so all three collapse
-to `createuser` and bind. That is what makes the path cross languages.
+There is **one** spec — the users API (`server-go/openapi.yaml`). The consumer does not have its own;
+it was built against that same contract, so it ingests it too, under its own repo. And there is **no**
+`graph.json` in the tree: `todo symbols` runs graphify on the real source to extract it.
 
 ## Run it
+
+Needs [graphify](https://github.com/graphify) on your PATH (for `todo symbols`).
 
 ```sh
 DB=$(mktemp -u).db
 
-# each service: its code graph, then its API endpoints, under its own repo
-todo --db "$DB" symbols   server-go --graph server-go/graph.json --repo users
-todo --db "$DB" symbols   client-py --graph client-py/graph.json --repo orders
-todo --db "$DB" endpoints server-go/openapi.yaml --repo users
-todo --db "$DB" endpoints client-py/openapi.yaml --repo orders
+# extract each service's code graph (todo symbols runs graphify on the source)
+todo --db "$DB" symbols server-go --repo users
+todo --db "$DB" symbols client-py --repo orders
+
+# ingest the one contract — the users API — under both services
+todo --db "$DB" endpoints server-go/openapi.yaml --repo users    # the provider
+todo --db "$DB" endpoints server-go/openapi.yaml --repo orders   # the consumer, built against it
 
 todo --db "$DB" path orders:place_order users:SaveUser
 ```
@@ -41,9 +42,10 @@ symbol    place_order()                        # Python
   --calls   -> symbol    SaveUser()             # Go store
 ```
 
-`create_user()` (Python) and `CreateUser()` (Go) both bound to the one operationId `createUser`,
-so the path runs straight through the language boundary as well as the network one.
+The API's operationId is `createUser`; the Python client function is `create_user` and the Go handler
+is `CreateUser`. `todo endpoints` binds an operationId to a symbol on a **normalized** name — case and
+separators dropped — so all three collapse to `createuser` and bind. That is what makes the path cross
+languages as well as the network.
 
-The `.go`/`.py` files are illustrative — `graph.json` stands in for what graphify would extract from
-them, so the walkthrough runs without an extractor installed. See
-[docs/cross-service.md](../../docs/cross-service.md).
+`server.go` carries `//go:build ignore` so it stays out of this module's build; graphify parses it all
+the same. See [docs/cross-service.md](../../docs/cross-service.md).

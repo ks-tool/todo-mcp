@@ -5,8 +5,8 @@ API are, in code, two disconnected graphs: one never calls the other's functions
 request. This feature stitches the two together, so `todo path` can run from a function in one
 service, across the network boundary, to the function that serves it in the other.
 
-Runnable examples: a [single-language walkthrough](../examples/cross-service/) and a
-[Go-server / Python-client](../examples/cross-service-go-python/) one that crosses languages too.
+There is a runnable [Go-server / Python-client example](../examples/cross-service-go-python/) that
+crosses the network boundary and the language boundary at once.
 
 ## The three links
 

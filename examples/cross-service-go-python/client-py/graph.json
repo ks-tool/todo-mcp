@@ -1,9 +1,0 @@
-{
-  "nodes": [
-    {"id": "orders_place_order", "label": "place_order()", "file_type": "code", "source_file": "client.py", "source_location": "L6"},
-    {"id": "orders_create_user", "label": "create_user()", "file_type": "code", "source_file": "client.py", "source_location": "L12"}
-  ],
-  "links": [
-    {"source": "orders_place_order", "target": "orders_create_user", "relation": "calls", "confidence": "EXTRACTED", "context": "call"}
-  ]
-}

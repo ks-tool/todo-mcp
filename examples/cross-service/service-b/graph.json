@@ -1,9 +1,0 @@
-{
-  "nodes": [
-    {"id": "users_handler_create", "label": "createUser()", "file_type": "code", "source_file": "users/handlers.go", "source_location": "L14"},
-    {"id": "users_store_save", "label": "saveUser()", "file_type": "code", "source_file": "users/store.go", "source_location": "L30"}
-  ],
-  "links": [
-    {"source": "users_handler_create", "target": "users_store_save", "relation": "calls", "confidence": "EXTRACTED", "context": "call"}
-  ]
-}
