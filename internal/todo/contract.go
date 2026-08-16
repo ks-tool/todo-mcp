@@ -95,11 +95,23 @@ func endpointsFromFile(path string) (map[string]Endpoint, error) {
 	case strings.HasSuffix(lower, ".graphql"), strings.HasSuffix(lower, ".graphqls"), strings.HasSuffix(lower, ".gql"):
 		return graphqlEndpointsFile(path)
 	}
-	sp, err := loadSpec(path)
+	// A JSON/YAML document: AsyncAPI or OpenAPI.
+	b, err := os.ReadFile(path)
 	if err != nil {
 		return nil, err
 	}
-	return endpoints(sp), nil
+	b, err = toJSON(path, b)
+	if err != nil {
+		return nil, err
+	}
+	if isAsyncAPI(b) {
+		return asyncEndpoints(b)
+	}
+	var sp oaSpec
+	if err := json.Unmarshal(b, &sp); err != nil {
+		return nil, err
+	}
+	return endpoints(&sp), nil
 }
 
 // signatureDiff reports how a consumer's expected shape differs from the provider's, or "" when they
@@ -211,9 +223,9 @@ func endpoints(spec *oaSpec) map[string]Endpoint {
 		for method, op := range ops {
 			e := Endpoint{Method: strings.ToUpper(method), Path: path}
 			req := append([]string(nil), paramNames(op.Parameters)...)
-			req = append(req, bodyProps(op.RequestBody, spec)...)
+			req = append(req, bodyProps(op.RequestBody, spec.Components.Schemas)...)
 			e.Request = sortUniq(req)
-			e.Response = sortUniq(bodyProps(successResponse(op), spec))
+			e.Response = sortUniq(bodyProps(successResponse(op), spec.Components.Schemas))
 			out[e.key()] = e
 		}
 	}
@@ -244,8 +256,9 @@ func successResponse(op oaOp) *oaBody {
 	return &b
 }
 
-// bodyProps returns the property names of a body's JSON schema, resolving one level of $ref.
-func bodyProps(b *oaBody, spec *oaSpec) []string {
+// bodyProps returns the property names of a body's JSON schema, resolving one level of $ref against
+// the given component schemas.
+func bodyProps(b *oaBody, schemas map[string]oaSchema) []string {
 	if b == nil || len(b.Content) == 0 {
 		return nil
 	}
@@ -256,19 +269,19 @@ func bodyProps(b *oaBody, spec *oaSpec) []string {
 			break
 		}
 	}
-	return schemaProps(mt.Schema, spec)
+	return schemaProps(mt.Schema, schemas)
 }
 
-func schemaProps(sc oaSchema, spec *oaSpec) []string {
+func schemaProps(sc oaSchema, schemas map[string]oaSchema) []string {
 	if len(sc.Ref) > 0 {
 		name := sc.Ref[strings.LastIndex(sc.Ref, "/")+1:]
-		if r, ok := spec.Components.Schemas[name]; ok {
+		if r, ok := schemas[name]; ok {
 			return propKeys(r)
 		}
 		return nil
 	}
 	if sc.Items != nil {
-		return schemaProps(*sc.Items, spec)
+		return schemaProps(*sc.Items, schemas)
 	}
 	return propKeys(sc)
 }
