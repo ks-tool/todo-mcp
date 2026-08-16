@@ -229,13 +229,21 @@ func wikiCommands() []*cobra.Command {
 	link.Flags().String("note", "", "note on the edge")
 
 	commit := &cobra.Command{
-		Use: "commit <task-id> <sha>", Short: "record a commit against a task", Args: cobra.ExactArgs(2),
+		Use: "commit <task-id> <sha>", Short: "record (or --del unlink) a commit against a task", Args: cobra.ExactArgs(2),
 		RunE: withStore(func(st *todo.Store, cmd *cobra.Command, args []string) error {
+			if mustBool(cmd, "del") {
+				return st.Unlink(args[0], todo.LinkCommit, args[1])
+			}
+			if err := guardRepoCommit(mustFlag(cmd, "dir"), args[1]); err != nil {
+				return err
+			}
 			return st.Link(args[0], todo.LinkCommit, args[1], mustFlag(cmd, "note"), mustFlag(cmd, "at"))
 		}),
 	}
 	commit.Flags().String("note", "", "the commit subject")
 	commit.Flags().String("at", "", "commit date, ISO 8601 (e.g. from git show -s --format=%cI)")
+	commit.Flags().String("dir", ".", "the repo to verify the sha against")
+	commit.Flags().Bool("del", false, "unlink the commit instead of recording it")
 
 	commits := &cobra.Command{
 		Use: "commits <task-id>", Short: "the commits recorded against a task", Args: cobra.ExactArgs(1),

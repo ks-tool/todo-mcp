@@ -58,6 +58,19 @@ func ScanCommits(dir, rev string) ([]CommitLink, error) {
 	return links, nil
 }
 
+// RepoHasCommit reports whether dir is a git repository and, if so, whether it contains sha as a
+// commit. It is how task_commit refuses a foreign sha: a dependency's or library's commit is not in
+// this repo's history, so recording it as a commit link would point the provenance graph at a ref
+// that goes nowhere — that belongs in a task comment instead. When dir is not a repo the membership
+// cannot be judged, so the guard steps aside (isRepo false) rather than block a legitimate record.
+func RepoHasCommit(dir, sha string) (isRepo, has bool) {
+	if err := exec.Command("git", "-C", dir, "rev-parse", "--git-dir").Run(); err != nil {
+		return false, false
+	}
+	err := exec.Command("git", "-C", dir, "cat-file", "-e", sha+"^{commit}").Run()
+	return true, err == nil
+}
+
 // Commit is one commit read whole from the log — everything a trailer node needs. Parents are the
 // git edges the graph walks; Message is the commit message as-is, subject and body together.
 type Commit struct {

@@ -200,6 +200,17 @@ func shortref(sha string) string {
 	return sha
 }
 
+// guardRepoCommit refuses a sha the git repository at dir does not contain: a dependency's or
+// library's commit is not in this repo's history, so it belongs in a task comment (todo note), not
+// a commit link that would point the provenance graph at a ref going nowhere. When dir is not a repo
+// the membership cannot be judged and the record is allowed through.
+func guardRepoCommit(dir, sha string) error {
+	if isRepo, has := todo.RepoHasCommit(dir, sha); isRepo && !has {
+		return fmt.Errorf("%s is not a commit in this repo (%s); a dependency's sha is a task comment (todo note), not a commit", shortref(sha), dir)
+	}
+	return nil
+}
+
 // resolveDB is where the backlog comes from, in one fixed order: --db, then TODO_DB — read the same
 // way the MCP host reads it, from the .mcp.json in the current directory before the ambient
 // environment (configEnv) — then a backlog.db in the current directory (the project-local
@@ -481,6 +492,27 @@ func taskCommands() []*cobra.Command {
 		edit.Flags().String(k, "", "new "+k)
 	}
 
+	note := &cobra.Command{
+		Use: "note <id> [text...]", Short: "set or edit a task's comment — works on a done task, no reopen", Args: cobra.MinimumNArgs(1),
+		RunE: withStore(func(st *todo.Store, cmd *cobra.Command, args []string) error {
+			text := mustFlag(cmd, "text")
+			if len(text) == 0 && len(args) > 1 {
+				text = strings.Join(args[1:], " ")
+			}
+			ok, err := st.SetNote(args[0], text)
+			if err != nil {
+				return err
+			}
+			if !ok {
+				fmt.Fprintf(os.Stderr, "no such task: %s\n", args[0])
+				os.Exit(2)
+			}
+			fmt.Fprintf(os.Stderr, "%s note set\n", args[0])
+			return nil
+		}),
+	}
+	note.Flags().String("text", "", "the comment (or pass it as trailing words); empty clears it")
+
 	dep := &cobra.Command{
 		Use: "dep <id> <depends-on-id>", Short: "link (or --del unlink) a dependency edge", Args: cobra.ExactArgs(2),
 		RunE: withStore(func(st *todo.Store, cmd *cobra.Command, args []string) error {
@@ -623,7 +655,7 @@ func taskCommands() []*cobra.Command {
 		list, ready, next, show, impact, stats,
 		setStatus("done", "mark a task done", todo.StatusDone),
 		setStatus("reopen", "reopen a done task", todo.StatusOpen),
-		add, edit, dep, suggest, del, restore, trash, render, imp,
+		add, edit, note, dep, suggest, del, restore, trash, render, imp,
 	}
 }
 
@@ -873,13 +905,14 @@ func emitSchema() {
 			"stats": "counts per epic", "done": "<id>", "reopen": "<id>",
 			"add":  "[--epic <e>] [--tags --priority --slug --touch --dep] <text> — epic defaults to the first of $TODO_EPICS",
 			"edit": "<id> [--priority --epic --slug --text --dep --status]",
+			"note": "<id> [text] — set/edit a task comment; works on a done task, no reopen",
 			"dep":  "<id> <depends-on-id> [--del]", "suggest": "<id> [--apply]",
 			"delete": "<id> — soft-delete to trash", "restore": "<id>", "trash": "the soft-deleted",
 			"render": "[tag] — rebuild markdown to stdout",
 			"backup": "[dir-or-file] — verified VACUUM INTO snapshot; never overwrites",
 			"doc":    "add|show|edit|list|rm|restore|import|link-slugs — the wiki",
 			"docs":   "<task-or-doc-id> — the docs a task maps to; a doc's related pages", "tasks": "<doc-id> — the tasks a doc maps to",
-			"commit": "<task> <sha> — record a commit", "commits": "<task>",
+			"commit": "<task> <sha> [--del] — record/unlink a commit; a foreign sha is refused", "commits": "<task>",
 			"sync-commits": "[--dir --rev] — scan git log for task ids",
 			"reindex":      "[--dir --rev --repo] — rebuild the derived trailer layer from git",
 			"trailer":      "bind|epic|list — the git commits reindex projects into the graph",

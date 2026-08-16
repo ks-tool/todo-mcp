@@ -292,10 +292,24 @@ func runMCP(st *todo.Store) error {
 		})
 
 	mcp.AddTool(s, &mcp.Tool{Name: "task_commit",
-		Description: "Record a commit against a task (sha, note=subject, at=ISO 8601 commit date). A task accretes many over its life."},
+		Description: "Record a commit against a task (sha, note=subject, at=ISO 8601 commit date), or with del=true unlink it. A task accretes many over its life. A sha this repo does not contain is refused — a dependency's or library's commit is a task comment (todo_note), not a commit link."},
 		func(_ context.Context, _ *mcp.CallToolRequest, in commitIn) (*mcp.CallToolResult, okOut, error) {
+			if in.Del {
+				err := st.Unlink(in.TaskID, todo.LinkCommit, in.SHA)
+				return okResult(err == nil, in.TaskID), okOut{OK: err == nil}, err
+			}
+			if isRepo, has := todo.RepoHasCommit(".", in.SHA); isRepo && !has {
+				return errText(shortref(in.SHA) + " is not a commit in this repo; a dependency's sha is a task comment (todo_note), not a commit"), okOut{}, nil
+			}
 			err := st.Link(in.TaskID, todo.LinkCommit, in.SHA, in.Note, in.At)
 			return okResult(err == nil, in.TaskID), okOut{OK: err == nil}, err
+		})
+
+	mcp.AddTool(s, &mcp.Tool{Name: "todo_note",
+		Description: "Set or edit a task's comment (the done_note) WITHOUT changing its status — so a comment can be added or corrected after a task is done, with no reopen. An empty note clears it."},
+		func(_ context.Context, _ *mcp.CallToolRequest, in noteIn) (*mcp.CallToolResult, okOut, error) {
+			ok, err := st.SetNote(in.ID, in.Note)
+			return okResult(ok, in.ID), okOut{OK: ok}, err
 		})
 
 	mcp.AddTool(s, &mcp.Tool{Name: "task_commits", Description: "The commits recorded against a task."},
@@ -427,6 +441,11 @@ type commitIn struct {
 	SHA    string `json:"sha"`
 	Note   string `json:"note,omitempty"`
 	At     string `json:"at,omitempty"` // commit date, ISO 8601; sync_commits fills this from git
+	Del    bool   `json:"del,omitempty"`
+}
+type noteIn struct {
+	ID   string `json:"id"`
+	Note string `json:"note"`
 }
 type syncIn struct {
 	Dir string `json:"dir,omitempty"`

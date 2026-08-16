@@ -397,9 +397,17 @@ func (s *Store) Update(id string, fields map[string]string) (bool, error) {
 			t.Touch = splitList(v)
 		case "status":
 			t.Status = Status(v)
+		case "note":
+			t.DoneNote = v
 		}
 	}
 	return true, s.Put(t)
+}
+
+// SetNote sets or clears a task's comment (the done_note) without touching its status — so a note
+// can be added or corrected AFTER a task is closed, no reopen required. An empty note clears it.
+func (s *Store) SetNote(id, note string) (bool, error) {
+	return s.Update(id, map[string]string{"note": note})
 }
 
 // AddDep and DelDep manage one dependency edge by hand, which is how the free-text `dep:` prose gets

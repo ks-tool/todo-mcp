@@ -199,3 +199,32 @@ func TestBackupIsConsistentAndRefusesOverwrite(t *testing.T) {
 		t.Fatal("an existing destination must be refused, not overwritten")
 	}
 }
+
+// TestSetNoteOnDoneTaskKeepsStatus covers todomcp-07: a comment can be set or cleared on a task
+// after it is done, without reopening it.
+func TestSetNoteOnDoneTaskKeepsStatus(t *testing.T) {
+	st := openTemp(t)
+	if err := st.Put(Task{ID: "n-01", Epic: "n", Status: StatusDone, Text: "shipped"}); err != nil {
+		t.Fatal(err)
+	}
+	if ok, err := st.SetNote("n-01", "resolved by bumping the dep"); err != nil || !ok {
+		t.Fatalf("set note: ok=%v err=%v", ok, err)
+	}
+	got, _, _ := st.Get("n-01")
+	if got.Status != StatusDone {
+		t.Errorf("setting a note must not change status, got %q", got.Status)
+	}
+	if got.DoneNote != "resolved by bumping the dep" {
+		t.Errorf("note not stored: %q", got.DoneNote)
+	}
+	if ok, _ := st.SetNote("n-01", ""); !ok {
+		t.Error("clearing a note must succeed")
+	}
+	got, _, _ = st.Get("n-01")
+	if len(got.DoneNote) != 0 || got.Status != StatusDone {
+		t.Errorf("clear left note=%q status=%q", got.DoneNote, got.Status)
+	}
+	if ok, _ := st.SetNote("missing", "x"); ok {
+		t.Error("a note on a missing task must report not-found")
+	}
+}
