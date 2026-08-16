@@ -65,12 +65,13 @@ type Trailer struct {
 // with where it lives in the source. It is derived (rebuilt per repo on each ingest) and joins the
 // same graph as the tasks and trailers, bridged by File to the provenance side.
 type Symbol struct {
-	Repo  string `json:"repo"`
-	SID   string `json:"sid"` // graphify node id
-	Label string `json:"label"`
-	Kind  string `json:"kind"` // file | func | package | doc | symbol
-	File  string `json:"file"`
-	Line  string `json:"line"`
+	Repo      string `json:"repo"`
+	SID       string `json:"sid"` // graphify node id
+	Label     string `json:"label"`
+	Kind      string `json:"kind"` // file | func | package | doc | symbol
+	File      string `json:"file"`
+	Line      string `json:"line"`
+	Community int    `json:"community"` // cluster id from label propagation; -1 until computed
 }
 
 // Doc is a wiki page: a title, a stable path, a kind, and a markdown body. The path may carry ONE

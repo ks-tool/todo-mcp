@@ -6,6 +6,42 @@ import (
 	"testing"
 )
 
+// TestCommunityDetection covers graphify-05: label propagation over the code edges puts a connected
+// cluster in one community and a disconnected one in another.
+func TestCommunityDetection(t *testing.T) {
+	st := openTemp(t)
+	graph := `{"nodes":[
+	  {"id":"a","label":"a()","file_type":"code"},{"id":"b","label":"b()","file_type":"code"},{"id":"c","label":"c()","file_type":"code"},
+	  {"id":"d","label":"d()","file_type":"code"},{"id":"e","label":"e()","file_type":"code"}
+	],"links":[
+	  {"source":"a","target":"b","relation":"calls"},
+	  {"source":"b","target":"c","relation":"calls"},
+	  {"source":"c","target":"a","relation":"calls"},
+	  {"source":"d","target":"e","relation":"calls"}
+	]}`
+	p := filepath.Join(t.TempDir(), "g.json")
+	if err := os.WriteFile(p, []byte(graph), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := st.IngestGraph("mine", p); err != nil {
+		t.Fatal(err)
+	}
+	comm := map[string]int{}
+	ss, _ := st.Symbols("mine")
+	for _, s := range ss {
+		comm[s.SID] = s.Community
+	}
+	if comm["a"] != comm["b"] || comm["b"] != comm["c"] {
+		t.Errorf("the connected cluster a,b,c must share a community: %v", comm)
+	}
+	if comm["d"] != comm["e"] {
+		t.Errorf("d,e must share a community: %v", comm)
+	}
+	if comm["a"] == comm["d"] {
+		t.Errorf("the two disconnected clusters must differ: %v", comm)
+	}
+}
+
 // TestIngestGraph covers graphify-01: a graphify graph.json loads into the symbol layer, node kinds
 // are derived (package, file, func, doc), and the ingest is scoped per repo so one project's symbols
 // do not wipe another's.

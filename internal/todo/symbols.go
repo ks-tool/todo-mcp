@@ -3,6 +3,7 @@ package todo
 import (
 	"encoding/json"
 	"os"
+	"sort"
 	"strings"
 )
 
@@ -72,7 +73,14 @@ ON CONFLICT(repo, source, target, relation) DO UPDATE SET confidence=excluded.co
 			return 0, err
 		}
 	}
-	return len(g.Nodes), tx.Commit()
+	if err := tx.Commit(); err != nil {
+		return 0, err
+	}
+	// Cluster the freshly-ingested graph so explain can report a community.
+	if err := s.detectCommunities(repo); err != nil {
+		return 0, err
+	}
+	return len(g.Nodes), nil
 }
 
 // SymbolEdge is one code edge: a relation between two symbols and how sure the extractor is
@@ -250,7 +258,7 @@ func (s *Store) GetSymbol(repo, sid string) (Symbol, bool, error) {
 }
 
 func (s *Store) scanSymbols(where string, args ...any) ([]Symbol, error) {
-	rows, err := s.db.Query(`SELECT repo, sid, label, kind, file, line FROM symbols `+where, args...)
+	rows, err := s.db.Query(`SELECT repo, sid, label, kind, file, line, community FROM symbols `+where, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -258,10 +266,89 @@ func (s *Store) scanSymbols(where string, args ...any) ([]Symbol, error) {
 	var out []Symbol
 	for rows.Next() {
 		var sym Symbol
-		if err := rows.Scan(&sym.Repo, &sym.SID, &sym.Label, &sym.Kind, &sym.File, &sym.Line); err != nil {
+		if err := rows.Scan(&sym.Repo, &sym.SID, &sym.Label, &sym.Kind, &sym.File, &sym.Line, &sym.Community); err != nil {
 			return nil, err
 		}
 		out = append(out, sym)
 	}
 	return out, rows.Err()
+}
+
+// detectCommunities clusters a repo's symbols by label propagation over the code edges — no cgo, no
+// LLM. Each node starts as its own community and repeatedly adopts the label most common among its
+// neighbours (ties broken by the smallest label, so the result is deterministic); the stable labels
+// are renumbered to small ids. It runs after an ingest so `explain` can report Community: N.
+func (s *Store) detectCommunities(repo string) error {
+	syms, err := s.scanSymbols(`WHERE repo = ?`, repo)
+	if err != nil {
+		return err
+	}
+	edges, err := s.symbolEdgesScoped(repo)
+	if err != nil {
+		return err
+	}
+	adj := map[string][]string{}
+	for _, e := range edges {
+		adj[e.Source] = append(adj[e.Source], e.Target)
+		adj[e.Target] = append(adj[e.Target], e.Source)
+	}
+	sids := make([]string, 0, len(syms))
+	label := make(map[string]string, len(syms))
+	for _, sym := range syms {
+		sids = append(sids, sym.SID)
+		label[sym.SID] = sym.SID
+	}
+	sort.Strings(sids)
+
+	for iter := 0; iter < 20; iter++ {
+		changed := false
+		for _, sid := range sids {
+			nbrs := adj[sid]
+			if len(nbrs) == 0 {
+				continue
+			}
+			counts := map[string]int{}
+			for _, n := range nbrs {
+				counts[label[n]]++
+			}
+			labs := make([]string, 0, len(counts))
+			for l := range counts {
+				labs = append(labs, l)
+			}
+			sort.Strings(labs) // smallest label wins ties
+			best, bestCount := label[sid], -1
+			for _, l := range labs {
+				if counts[l] > bestCount {
+					best, bestCount = l, counts[l]
+				}
+			}
+			if best != label[sid] {
+				label[sid] = best
+				changed = true
+			}
+		}
+		if !changed {
+			break
+		}
+	}
+
+	// Renumber stable labels to small ids by first appearance in sorted order.
+	num := map[string]int{}
+	tx, err := s.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback() }()
+	for _, sid := range sids {
+		l := label[sid]
+		id, ok := num[l]
+		if !ok {
+			id = len(num)
+			num[l] = id
+		}
+		if _, err := tx.Exec(`UPDATE symbols SET community = ? WHERE repo = ? AND sid = ?`, id, repo, sid); err != nil {
+			return err
+		}
+	}
+	return tx.Commit()
 }

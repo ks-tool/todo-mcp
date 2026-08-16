@@ -142,12 +142,13 @@ CREATE INDEX IF NOT EXISTS trailer_files_by_path ON trailer_files(path);
 -- files, packages), scoped by repo and rebuilt on each ingest. They join the same database as the
 -- tasks and trailers, bridged to them by source file, so a path can cross from intent to code.
 CREATE TABLE IF NOT EXISTS symbols (
-    repo  TEXT NOT NULL,
-    sid   TEXT NOT NULL,             -- graphify node id, unique within a repo's graph
-    label TEXT NOT NULL DEFAULT '',
-    kind  TEXT NOT NULL DEFAULT '',  -- file | func | package | doc | symbol
-    file  TEXT NOT NULL DEFAULT '',
-    line  TEXT NOT NULL DEFAULT '',
+    repo      TEXT NOT NULL,
+    sid       TEXT NOT NULL,             -- graphify node id, unique within a repo's graph
+    label     TEXT NOT NULL DEFAULT '',
+    kind      TEXT NOT NULL DEFAULT '',  -- file | func | package | doc | symbol
+    file      TEXT NOT NULL DEFAULT '',
+    line      TEXT NOT NULL DEFAULT '',
+    community INTEGER NOT NULL DEFAULT -1, -- cluster id from label propagation over the code edges
     PRIMARY KEY (repo, sid)
 );
 CREATE INDEX IF NOT EXISTS symbols_by_file ON symbols(repo, file);
@@ -217,7 +218,10 @@ END;
 	// links carry real history that a re-import would lose. This is a forward-only add of a column
 	// with a default (no row is reshaped), not a back-compat conversion, so it is safe to run every
 	// open and does nothing once the column exists.
-	return s.ensureColumn("links", "at", "TEXT NOT NULL DEFAULT ''")
+	if err := s.ensureColumn("links", "at", "TEXT NOT NULL DEFAULT ''"); err != nil {
+		return err
+	}
+	return s.ensureColumn("symbols", "community", "INTEGER NOT NULL DEFAULT -1")
 }
 
 // ensureColumn adds a column to a table when it is absent, and does nothing when it is present, so

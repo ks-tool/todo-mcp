@@ -145,6 +145,7 @@ func printExplain(ex *todo.SymbolExplain) {
 	fmt.Printf("Node: %s\n", ex.Symbol.Label)
 	fmt.Printf("  Source:    %s %s\n", ex.Symbol.File, ex.Symbol.Line)
 	fmt.Printf("  Repo:      %s\n", ex.Symbol.Repo)
+	fmt.Printf("  Community: %d\n", ex.Symbol.Community)
 	fmt.Printf("  Degree:    %d\n\n", ex.Degree)
 	fmt.Printf("Connections (%d):\n", len(ex.Conns))
 	for _, c := range ex.Conns {
