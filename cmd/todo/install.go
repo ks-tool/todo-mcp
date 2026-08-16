@@ -6,6 +6,8 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	"github.com/ks-tool/todo-mcp/internal/todo"
 )
 
 // runInstall wires this binary into a project's MCP configuration, so onboarding a project is one
@@ -58,6 +60,19 @@ func runInstall(dir, db string, epics []string, instructions string) error {
 		}
 		fmt.Fprintf(os.Stderr, "kept the usage block in %s current\n", md)
 	}
+
+	// Reindex on install, so the trailer graph reflects the history from the first session rather than
+	// waiting for the first hook or server start. Best-effort: the same database the server will use,
+	// and a directory that is not a git repo (or has no main) is a note, never a failed install.
+	if st, err := todo.Open(resolveDB()); err == nil {
+		if n, rerr := st.Reindex(dir, reindexRepo("", dir), "main"); rerr != nil {
+			fmt.Fprintf(os.Stderr, "reindex skipped: %v\n", rerr)
+		} else {
+			fmt.Fprintf(os.Stderr, "reindexed %d commits from git\n", n)
+		}
+		_ = st.Close()
+	}
+
 	fmt.Fprintln(os.Stderr, "the host reads .mcp.json at startup, so restart the session for the tools to appear")
 	return nil
 }
