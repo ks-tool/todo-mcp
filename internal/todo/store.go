@@ -100,6 +100,36 @@ CREATE TRIGGER IF NOT EXISTS docs_au AFTER UPDATE ON docs BEGIN
     INSERT INTO docs_fts(rowid, id, title, body) VALUES (new.rowid, new.id, new.title, new.body);
 END;
 
+-- The derived layer: git commits projected as read-only trailer nodes. This table is a CACHE, not
+-- authored data — reindex TRUNCATEs and rebuilds it from git log, so nothing here is soft-deleted
+-- and losing it costs only a reindex. It is kept apart from tasks precisely so that rebuild touches
+-- only the derived side and never the authored tasks, which are never hard-deleted. A trailer's
+-- project is the repo it came from; its cross-cutting tags are parsed from the commit message.
+CREATE TABLE IF NOT EXISTS trailers (
+    sha     TEXT PRIMARY KEY,
+    repo    TEXT NOT NULL DEFAULT '',
+    subject TEXT NOT NULL DEFAULT '',
+    body    TEXT NOT NULL DEFAULT '',
+    tags    TEXT NOT NULL DEFAULT '[]',
+    parents TEXT NOT NULL DEFAULT '[]',
+    at      TEXT NOT NULL DEFAULT ''
+);
+CREATE INDEX IF NOT EXISTS trailers_by_repo ON trailers(repo);
+
+CREATE VIRTUAL TABLE IF NOT EXISTS trailers_fts USING fts5(
+    sha UNINDEXED, subject, body, content='trailers', content_rowid='rowid'
+);
+CREATE TRIGGER IF NOT EXISTS trailers_ai AFTER INSERT ON trailers BEGIN
+    INSERT INTO trailers_fts(rowid, sha, subject, body) VALUES (new.rowid, new.sha, new.subject, new.body);
+END;
+CREATE TRIGGER IF NOT EXISTS trailers_ad AFTER DELETE ON trailers BEGIN
+    INSERT INTO trailers_fts(trailers_fts, rowid, sha, subject, body) VALUES ('delete', old.rowid, old.sha, old.subject, old.body);
+END;
+CREATE TRIGGER IF NOT EXISTS trailers_au AFTER UPDATE ON trailers BEGIN
+    INSERT INTO trailers_fts(trailers_fts, rowid, sha, subject, body) VALUES ('delete', old.rowid, old.sha, old.subject, old.body);
+    INSERT INTO trailers_fts(rowid, sha, subject, body) VALUES (new.rowid, new.sha, new.subject, new.body);
+END;
+
 CREATE VIRTUAL TABLE IF NOT EXISTS tasks_fts USING fts5(
     id UNINDEXED, epic, text, done_note, content='tasks', content_rowid='rowid'
 );

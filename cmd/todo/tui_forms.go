@@ -60,15 +60,14 @@ func (m *tui) openTaskForm(t *todo.Task) tea.Cmd {
 		cur.Tags = append([]string(nil), m.tags...) // the active filter is the natural default for a new task
 	}
 	epic, tags := cur.Epic, joinComma(cur.Tags)
-	pri, slug := cur.Priority, cur.Slug
-	touch, dep, text := joinComma(cur.Touch), cur.DepText, cur.Text
+	pri, dep, text := cur.Priority, cur.DepText, cur.Text
 
+	// slug and touchpoints are not edited here — they are `todo path`/linking metadata, kept off the
+	// human form; an edit carries the stored values through untouched (the CLI is where they change).
 	f := huh.NewForm(huh.NewGroup(
 		huh.NewInput().Title("epic").Value(&epic),
 		huh.NewInput().Title("tags (comma, optional)").Value(&tags),
 		huh.NewInput().Title("priority").Value(&pri),
-		huh.NewInput().Title("slug").Value(&slug),
-		huh.NewInput().Title("touchpoints (comma)").Value(&touch),
 		huh.NewInput().Title("dep").Value(&dep),
 		huh.NewText().Title("text").Value(&text).Lines(8),
 	))
@@ -78,8 +77,8 @@ func (m *tui) openTaskForm(t *todo.Task) tea.Cmd {
 			return
 		}
 		edited := todo.Task{
-			Epic: epic, Tags: splitComma(tags), Priority: pri, Slug: slug,
-			Touch: splitComma(touch), DepText: dep, Text: text,
+			Epic: epic, Tags: splitComma(tags), Priority: pri, Slug: cur.Slug,
+			Touch: cur.Touch, DepText: dep, Text: text,
 			Status: cur.Status,
 		}
 		if len(edited.Status) == 0 {

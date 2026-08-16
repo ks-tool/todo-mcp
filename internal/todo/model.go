@@ -36,6 +36,31 @@ type Task struct {
 	DeletedAt string   `json:"deletedAt,omitempty"` // RFC3339 when soft-deleted; empty means live
 }
 
+// A node's kind tells a task apart from a trailer wherever the two share a view — the graph `todo
+// path` walks, and the list filters that show tasks only. Tasks and trailers live in separate
+// tables (one authored, one a rebuildable cache), so the kind is the discriminator that names which
+// side a node came from without a column that has to be kept in step.
+const (
+	KindTask    = "task"
+	KindTrailer = "trailer"
+)
+
+// Trailer is a git commit projected into the graph as a read-only node. reindex loads it from the
+// history — the sha is its name, the commit message its body — and nothing edits it afterwards. A
+// trailer is NOT a task: it never appears in the backlog list or the TUI, and exists only so `todo
+// path` can walk the provenance behind the tasks. Its project is the repo it came from; its tags,
+// unlike a task's locally-authored ones, are parsed from the commit message and so are shared by
+// everyone who reindexes the same history.
+type Trailer struct {
+	SHA     string   `json:"sha"`  // the commit sha — the node's name
+	Repo    string   `json:"repo,omitempty"`
+	Subject string   `json:"subject"`
+	Body    string   `json:"body,omitempty"`
+	Tags    []string `json:"tags,omitempty"`    // from the commit message; git-derived, shared
+	Parents []string `json:"parents,omitempty"` // parent shas — the git edges
+	At      string   `json:"at,omitempty"`      // committer date, ISO 8601
+}
+
 // Doc is a wiki page: a title, a stable path, a kind, and a markdown body. The path may carry ONE
 // level of hierarchy — "<section>/<page>", e.g. threat-model/02-node — where "<section>/README" is
 // the section's index and the pages beside it stay flat: a section groups pages that together

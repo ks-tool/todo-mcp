@@ -615,12 +615,8 @@ func (m *tui) detailContent() string {
 	writeln(head)
 	writeln("")
 	writeln(stDim.Render("epic  ") + t.Epic)
-	if len(t.Slug) > 0 {
-		writeln(stDim.Render("slug  ") + t.Slug)
-	}
-	if len(t.Touch) > 0 {
-		writeln(stDim.Render("files ") + strings.Join(t.Touch, ", "))
-	}
+	// slug and touchpoints are deliberately not shown: they are metadata for `todo path` and doc
+	// linking, not something a person reads down the list; the CLI still carries them.
 	if len(t.DepText) > 0 {
 		writeln(stDim.Render("dep   ") + t.DepText)
 	}
