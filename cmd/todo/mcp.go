@@ -387,6 +387,16 @@ func runMCP(st *todo.Store) error {
 			return textResult(fmt.Sprintf("%d step(s)", len(p.Steps))), pathOut{Path: p}, nil
 		})
 
+	mcp.AddTool(s, &mcp.Tool{Name: "contract",
+		Description: "Check an API contract between two services from their OpenAPI (JSON) specs. consumer is the spec the caller was built against, provider the spec the service now offers. Returns the endpoints present and compatible in both, and the breaks: orphan-call (an endpoint the provider dropped) and schema-drift (a request/response shape that diverged)."},
+		func(_ context.Context, _ *mcp.CallToolRequest, in contractIn) (*mcp.CallToolResult, contractOut, error) {
+			c, err := todo.CheckContractFiles(in.Consumer, in.Provider)
+			if err != nil {
+				return errText(err.Error()), contractOut{}, nil
+			}
+			return textResult(fmt.Sprintf("%d matched, %d break(s)", len(c.Matched), len(c.Breaks))), contractOut{Contract: c}, nil
+		})
+
 	mcp.AddTool(s, &mcp.Tool{Name: "explain",
 		Description: "A code symbol from the ingested graphify graph: its source (file:line), degree, and its connections — each with a relation (calls/imports_from/references/method/contains/depends_on) and confidence (EXTRACTED|INFERRED). node resolves as an exact id, an exact label (with or without '()'), or a label substring; repo restricts the search."},
 		func(_ context.Context, _ *mcp.CallToolRequest, in explainIn) (*mcp.CallToolResult, explainOut, error) {
@@ -536,6 +546,13 @@ type pathIn struct {
 }
 type pathOut struct {
 	Path *todo.Path `json:"path,omitempty"`
+}
+type contractIn struct {
+	Consumer string `json:"consumer"`
+	Provider string `json:"provider"`
+}
+type contractOut struct {
+	Contract *todo.Contract `json:"contract,omitempty"`
 }
 type explainIn struct {
 	Node string `json:"node"`

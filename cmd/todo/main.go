@@ -59,8 +59,57 @@ Output is a table at a terminal, JSON Lines into a pipe or under --json. Exit: 0
 	root.AddCommand(trailerCommands()...)
 	root.AddCommand(pathCommand())
 	root.AddCommand(explainCommand())
+	root.AddCommand(contractCommand())
 	root.AddCommand(frontCommands()...)
 	return root
+}
+
+// contractCommand checks the API contract between two services from their OpenAPI specs — the fast,
+// language-agnostic answer to "did we break the contract".
+func contractCommand() *cobra.Command {
+	return &cobra.Command{
+		Use:   "contract <consumer-spec> <provider-spec>",
+		Short: "check an API contract between two OpenAPI (JSON) specs",
+		Long: `Compare what a CONSUMER expects (the provider spec it was built against) against what the
+PROVIDER now offers, and report contract breaks: an endpoint the consumer needs that the provider
+dropped (orphan-call), or one whose request/response shape diverged (schema-drift). Exit 0 when the
+contract holds, 2 when any break is found.`,
+		Args: cobra.ExactArgs(2),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			c, err := todo.CheckContractFiles(args[0], args[1])
+			if err != nil {
+				return err
+			}
+			if jsonOut() {
+				enc := json.NewEncoder(os.Stdout)
+				enc.SetIndent("", "  ")
+				if err := enc.Encode(c); err != nil {
+					return err
+				}
+			} else {
+				printContract(c)
+			}
+			if len(c.Breaks) > 0 {
+				os.Exit(2)
+			}
+			return nil
+		},
+	}
+}
+
+func printContract(c *todo.Contract) {
+	fmt.Printf("matched %d endpoint(s)\n", len(c.Matched))
+	for _, e := range c.Matched {
+		fmt.Printf("  ok  %s %s\n", e.Method, e.Path)
+	}
+	if len(c.Breaks) == 0 {
+		fmt.Fprintln(os.Stderr, "contract intact")
+		return
+	}
+	fmt.Printf("\nBREAKS (%d):\n", len(c.Breaks))
+	for _, b := range c.Breaks {
+		fmt.Printf("  [%s] %s %s — %s\n", b.Kind, b.Method, b.Path, b.Detail)
+	}
 }
 
 // explainCommand is the graphify `explain` view over the ingested symbol graph: a node, where it
@@ -1098,6 +1147,9 @@ func emitSchema() {
 			"sync-commits": "[--dir --rev] — scan git log for task ids",
 			"reindex":      "[--dir --rev --repo] — rebuild the derived trailer layer from git",
 			"symbols":      "<dir> [--graph --repo] — extract code symbols via graphify and ingest them",
+			"path":         "<A> <B> [--epic --tag] — shortest chain of edges between two nodes",
+			"explain":      "<node> [--repo] — a code symbol's source, degree and connections",
+			"contract":     "<consumer-spec> <provider-spec> — check an API contract between two OpenAPI specs",
 			"trailer":      "bind|epic|list — the git commits reindex projects into the graph",
 		},
 		"output": "JSON Lines under --json or into a pipe; exit 0 found / 2 empty / 1 error",
