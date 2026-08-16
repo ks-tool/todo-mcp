@@ -135,6 +135,10 @@ The project's tasks and design docs live in one SQLite backlog served by the ` +
 outside this list are other projects. TAGS are free labels for slicing, and the ` + "`tag`" + ` filter
 takes a comma list a task must carry all of (` + "`todo_list {tag: \"ee,scheduler\"}`" + `).
 
+**Every new task: 2–3 tags, and report its id.** When you create a task, give it two or three
+relevant tags so it can later be found by slice, and hand the id ` + "`todo_add`" + ` mints back to the
+user — that id is how the task is referenced, closed and traced to its commit.
+
 **No code without a task.** If a prompt asks for code and no task covers it, create one first
 (` + "`todo_add`" + `) and then follow the standard flow — do the work and close the task with the
 commit. Code that ships without a task cannot be found again through the backlog and breaks the

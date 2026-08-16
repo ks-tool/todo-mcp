@@ -138,6 +138,18 @@ func TestClaudeBlockIsOwnedBetweenMarkers(t *testing.T) {
 	}
 }
 
+// TestClaudeBlockTeachesTagsAndId covers todomcp-18: the installed guidance tells the agent to tag
+// every new task and to report the id todo_add mints.
+func TestClaudeBlockTeachesTagsAndId(t *testing.T) {
+	b := claudeBlock([]string{"proj"})
+	if !strings.Contains(b, "2–3 tags") {
+		t.Error("the block must instruct giving a new task 2–3 tags")
+	}
+	if !strings.Contains(b, "report its id") {
+		t.Error("the block must instruct reporting the minted id")
+	}
+}
+
 // TestConfigEnvReadsMCPJSON pins todomcp-01: the CLI reads TODO_DB/TODO_EPICS from the `todo`
 // server's env in the current directory's .mcp.json, ahead of the ambient value, so a shell in the
 // project root reaches the same database and epics the server serves — and --db still wins.
