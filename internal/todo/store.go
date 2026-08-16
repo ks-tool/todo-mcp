@@ -116,6 +116,15 @@ CREATE TABLE IF NOT EXISTS trailers (
 );
 CREATE INDEX IF NOT EXISTS trailers_by_repo ON trailers(repo);
 
+-- The optional code layer, also derived: which files each commit changed, so a path can reach from
+-- a commit into the files it touched. Rebuilt with the trailers on every reindex.
+CREATE TABLE IF NOT EXISTS trailer_files (
+    sha  TEXT NOT NULL,
+    path TEXT NOT NULL,
+    PRIMARY KEY (sha, path)
+);
+CREATE INDEX IF NOT EXISTS trailer_files_by_path ON trailer_files(path);
+
 -- The trailer→epic binding is AUTHORED, not derived: it is the local decision to file a commit from
 -- the history under one of your own epics, and it must survive the reindex that rebuilds the trailer
 -- cache. So it lives in its own table, keyed by sha, and reindex never touches it. Epics are local —

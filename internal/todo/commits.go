@@ -102,6 +102,34 @@ func LogCommits(dir, rev string) ([]Commit, error) {
 	return commits, nil
 }
 
+// LogFiles reads which files each commit of rev changed — the trailer→file edges of the optional
+// code layer. Merges are skipped (a merge lists no files of its own), so a file is attributed to
+// the commit that actually changed it. Returns sha → paths.
+func LogFiles(dir, rev string) (map[string][]string, error) {
+	args := []string{"-C", dir, "log", "--no-merges", "--name-only", "--format=%x1e%H"}
+	if len(rev) > 0 {
+		args = append(args, rev)
+	}
+	out, err := exec.Command("git", args...).Output()
+	if err != nil {
+		return nil, err
+	}
+	files := map[string][]string{}
+	for rec := range strings.SplitSeq(string(out), "\x1e") {
+		lines := strings.Split(strings.Trim(rec, "\n"), "\n")
+		if len(lines) == 0 || len(lines[0]) == 0 {
+			continue
+		}
+		sha := lines[0]
+		for _, f := range lines[1:] {
+			if f = strings.TrimSpace(f); len(f) > 0 {
+				files[sha] = append(files[sha], f)
+			}
+		}
+	}
+	return files, nil
+}
+
 // SyncCommits discovers commit→task mappings and writes them as commit links. A commit that names a
 // task the store does not have is skipped rather than failed — a message can mention an id that was
 // renamed or never existed, and one bad reference must not stop the sweep. Returns how many edges

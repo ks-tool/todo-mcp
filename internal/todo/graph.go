@@ -43,6 +43,7 @@ const (
 	edgeParent = "parent" // trailer — trailer, git ancestry
 	edgeDep    = "dep"    // task — task, a dependency edge
 	edgeDoc    = "doc"    // task — doc / doc — doc, a wiki link
+	edgeFile   = "file"   // trailer — file (changed) / task — file (touchpoint)
 )
 
 // Path resolves a and b to nodes and returns the shortest chain of edges between them. a and b are
@@ -232,8 +233,34 @@ func (s *Store) buildGraph(scope PathScope) (*graph, error) {
 			}
 		}
 	}
-	return g, linkRows.Err()
+	if err := linkRows.Err(); err != nil {
+		return nil, err
+	}
+
+	// file edges — the optional code layer. A trailer joins the files its commit changed; a task
+	// joins its touchpoints. Only scoped nodes contribute, which scopes the files with them.
+	fileRows, err := s.db.Query(`SELECT sha, path FROM trailer_files`)
+	if err != nil {
+		return nil, err
+	}
+	if err := scanPairs(fileRows, func(sha, path string) {
+		if trailerIn[sha] {
+			g.link(PathNode{Kind: KindTrailer, ID: sha, Label: shortLabel(sha)}, fileNode(path), edgeFile)
+		}
+	}); err != nil {
+		return nil, err
+	}
+	for _, t := range tasks {
+		for _, f := range t.Touch {
+			g.link(taskNode(t), fileNode(f), edgeFile)
+		}
+	}
+	return g, nil
 }
+
+const KindFile = "file"
+
+func fileNode(path string) PathNode { return PathNode{Kind: KindFile, ID: path, Label: path} }
 
 // linkDoc joins a source node to a doc by id, materializing the doc node from the store so it reads
 // by its title.
@@ -284,7 +311,24 @@ func (s *Store) resolveNode(ref string) (PathNode, bool, error) {
 			return trailerNode(tr), true, nil
 		}
 	}
+	if ok, err := s.fileExists(ref); err != nil {
+		return PathNode{}, false, err
+	} else if ok {
+		return fileNode(ref), true, nil
+	}
 	return s.resolveByText(ref)
+}
+
+// fileExists reports whether ref names a file the graph knows — one a commit changed or a task
+// lists as a touchpoint — so a path argument resolves to its file node.
+func (s *Store) fileExists(ref string) (bool, error) {
+	var one int
+	err := s.db.QueryRow(`SELECT 1 WHERE EXISTS (SELECT 1 FROM trailer_files WHERE path = ?)
+   OR EXISTS (SELECT 1 FROM tasks t, json_each(t.touch) je WHERE je.value = ? AND t.deleted_at = '')`, ref, ref).Scan(&one)
+	if err == sql.ErrNoRows {
+		return false, nil
+	}
+	return err == nil, err
 }
 
 func (s *Store) trailerByPrefix(prefix string) (Trailer, bool, error) {

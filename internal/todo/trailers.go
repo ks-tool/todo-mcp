@@ -47,6 +47,10 @@ func (s *Store) Reindex(dir, repo, rev string) (int, error) {
 	if err != nil {
 		return 0, err
 	}
+	files, err := LogFiles(dir, rev)
+	if err != nil {
+		return 0, err
+	}
 	tx, err := s.db.Begin()
 	if err != nil {
 		return 0, err
@@ -55,11 +59,19 @@ func (s *Store) Reindex(dir, repo, rev string) (int, error) {
 	if _, err := tx.Exec(`DELETE FROM trailers`); err != nil {
 		return 0, err
 	}
+	if _, err := tx.Exec(`DELETE FROM trailer_files`); err != nil {
+		return 0, err
+	}
 	for _, c := range commits {
 		t := Trailer{SHA: c.SHA, Repo: repo, Subject: c.Subject, Body: c.Message,
 			Tags: tagsFromMessage(c.Message), Parents: c.Parents, At: c.Date}
 		if err := putTrailer(tx, t); err != nil {
 			return 0, err
+		}
+		for _, path := range files[c.SHA] {
+			if _, err := tx.Exec(`INSERT OR IGNORE INTO trailer_files (sha, path) VALUES (?,?)`, c.SHA, path); err != nil {
+				return 0, err
+			}
 		}
 	}
 	return len(commits), tx.Commit()
@@ -141,7 +153,10 @@ func cutTagsTrailer(line string) (string, bool) {
 // tables, so a rebuild can be as destructive here as it likes without risking work that git cannot
 // restore.
 func (s *Store) TruncateTrailers() error {
-	_, err := s.db.Exec(`DELETE FROM trailers`)
+	if _, err := s.db.Exec(`DELETE FROM trailers`); err != nil {
+		return err
+	}
+	_, err := s.db.Exec(`DELETE FROM trailer_files`)
 	return err
 }
 

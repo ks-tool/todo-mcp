@@ -1,6 +1,11 @@
 package todo
 
-import "testing"
+import (
+	"os"
+	"os/exec"
+	"path/filepath"
+	"testing"
+)
 
 // TestPathBFS covers todomcp-05: a shortest path crosses every edge kind — a dependency between two
 // tasks, the commit that closed one, and that commit's parent — and the endpoints resolve by id, by
@@ -62,5 +67,55 @@ func TestPathBFS(t *testing.T) {
 	// Scope keeps the path inside one epic: restricting to epic b excludes the a-side nodes.
 	if _, ok, _ := st.Path("a-01", "2222222bbb", PathScope{Epic: "b"}); ok {
 		t.Error("scoping to another epic must drop the path")
+	}
+}
+
+// TestPathReachesFiles covers todomcp-06: reindex records the files a commit changed, and a path
+// can cross from a commit into a file and on to a task that lists the same file as a touchpoint.
+func TestPathReachesFiles(t *testing.T) {
+	dir := t.TempDir()
+	git := func(args ...string) {
+		t.Helper()
+		cmd := exec.Command("git", append([]string{"-C", dir}, args...)...)
+		cmd.Env = append(os.Environ(),
+			"GIT_AUTHOR_NAME=t", "GIT_AUTHOR_EMAIL=t@t", "GIT_COMMITTER_NAME=t", "GIT_COMMITTER_EMAIL=t@t")
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %v\n%s", args, err, out)
+		}
+	}
+	git("init", "-b", "main")
+	if err := os.MkdirAll(filepath.Join(dir, "cmd"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "cmd", "app.go"), []byte("package main"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	git("add", "-A")
+	git("commit", "-m", "feat: add the app")
+
+	st := openTemp(t)
+	if _, err := st.Reindex(dir, "app", "main"); err != nil {
+		t.Fatal(err)
+	}
+	ts, _ := st.Trailers("app")
+	if len(ts) != 1 {
+		t.Fatalf("want 1 trailer, got %d", len(ts))
+	}
+	sha := ts[0].SHA
+
+	// A commit reaches the file it changed.
+	if _, ok, err := st.Path(sha, "cmd/app.go", PathScope{}); err != nil || !ok {
+		t.Fatalf("a commit must reach the file it changed: ok=%v err=%v", ok, err)
+	}
+	// And a task touching the same file joins to the commit through it.
+	if err := st.Put(Task{ID: "app-01", Epic: "app", Text: "owns the file", Touch: []string{"cmd/app.go"}}); err != nil {
+		t.Fatal(err)
+	}
+	p, ok, err := st.Path("app-01", sha, PathScope{})
+	if err != nil || !ok {
+		t.Fatalf("task→file→commit path missing: ok=%v err=%v", ok, err)
+	}
+	if len(p.Steps) != 2 || p.Steps[0].Node.Kind != KindFile || p.Steps[1].Node.Kind != KindTrailer {
+		t.Errorf("want task -file- file -file- trailer, got %+v", p.Steps)
 	}
 }
