@@ -54,12 +54,39 @@ at all, and the half that hurt — code navigation — was already better served
 The footprint went from 75 MB to 2.3 MB, and the risk class went from "the refresh can delete
 source" to "the tool writes only its own database file".
 
-## What this tool deliberately does not do
+## Where the code graph came back — and how it is different
 
-There is no call graph here and there will not be one. "What calls X", "what breaks if Y changes"
-— on a large unfamiliar codebase those are real questions, a knowledge graph is a real answer to
-them, and grep is not. If that is your daily question, this tool does not compete; a language
-server or a code-graph indexer does. Our finding was narrower than "graphs are bad": on a codebase
-you know, asked by someone who knows a symbol name, the graph was a toll booth on the road to
-grep — and the knowledge worth indexing was the *why* (decisions, designs, the backlog behind
-them), not the *what* (the code, which is its own index).
+The account above ended, for a long time, with "there is no call graph here and there will not be
+one." That is no longer true, and it is worth being honest about why the line changed and why it is
+not a reversal of the lesson.
+
+A code graph did come back, under the sub-project `todo-mcp/graphify`. What changed is every property
+that made the original one a net loss:
+
+- **Ingested, not owned.** todo does not parse the tree or maintain an index. It runs an external
+  extractor (graphify) on demand and loads its `graph.json` into the same SQLite file. There is no
+  standing 75 MB cache respawning in the repo root, no pre-search hook, no refresh command of its own
+  that can go wrong.
+- **Non-destructive by construction.** The disaster that justified the original line — a reindex that
+  deleted 44 source files — cannot happen here. todo's `reindex` rebuilds only its own derived tables
+  (the trailer and symbol caches), scoped **per repo** so one project never wipes another's, and
+  `install` refuses to reindex silently: when a repo has history it tells you to `todo backup` first.
+  The tool writes only its own database file.
+- **Optional.** The backlog, the wiki and the provenance graph work with no code layer at all. The
+  symbols are a layer you ingest when a question wants them, not a tax on every search.
+- **Unified, which is the actual point.** A standalone code graph answers "what calls X". The reason
+  to put it *here* is that the code nodes join the intent and provenance already in the database —
+  bridged at the file level, so `todo path` runs from a task to the commit that closed it to the file
+  it touched to a symbol in that file. That crossing is the thing neither grep nor a standalone graph
+  gives you.
+
+And a second, narrower use of the same idea: **[API-contract checking](docs/contract.md)**. Two
+services tracked in one backlog, asked "is the contract still honoured", get one structured answer —
+the list of orphan-calls and schema-drifts — instead of a text dump to read. It is the original
+lesson applied, not abandoned: a specific question with a typed answer, not a graph traversal that
+returns 257 nodes truncated to 79.
+
+The core finding stands. Structured beats dumps; the knowledge worth keeping is the *why* as much as
+the *what*; and no tool here rebuilds an index in a way that can lose your work. The code graph
+earns its place now only because it obeys those rules — ingested, optional, safe, and joined to the
+decisions rather than standing apart from them.
