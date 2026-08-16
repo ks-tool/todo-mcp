@@ -430,24 +430,36 @@ func (m *tui) openHelp() {
 	m.focus = focusViewer
 }
 
-const helpText = `# Keys
-
-## List
-- ` + "`↑`/`↓`" + ` move · ` + "`Enter`/`e`" + ` edit · ` + "`a`" + ` add · ` + "`d`" + ` delete
-- ` + "`c`" + ` commit · ` + "`m`" + ` comment · ` + "`l`" + ` link a doc
-- ` + "`/`" + ` search · ` + "`f`" + ` filter by tag · ` + "`p`" + ` filter by epic · ` + "`s`" + ` cycle status · ` + "`t`" + ` trash
-- ` + "`1`–`4`" + ` sort by that column (repeat flips direction, ` + "`0`" + ` restores the store's order)
-- ` + "`v`" + ` full-screen view · ` + "`Tab`" + ` focus the detail · ` + "`w`" + ` wiki · ` + "`q`" + ` quit
-
-## Detail (Tab)
-- ` + "`↑`/`↓`" + ` scroll · ` + "`n`/`p`" + ` walk links · ` + "`Enter`" + ` follow · ` + "`Tab`/`Esc`" + ` back
-
-## Viewer / help / any modal
-- ` + "`↑`/`↓`" + ` scroll · ` + "`Esc`" + ` (or ` + "`q`" + `) closes it
-
-## Trash (` + "`t`" + `)
-- ` + "`r`" + ` restore the selected task
-`
+// helpText lists one key binding per line, grouped by where it applies.
+const helpText = "# Keys\n\n" +
+	"## List\n" +
+	"- `↑` / `↓` — move\n" +
+	"- `Enter` / `e` — edit\n" +
+	"- `a` — add\n" +
+	"- `d` — delete\n" +
+	"- `c` — commit\n" +
+	"- `m` — comment\n" +
+	"- `l` — link a doc\n" +
+	"- `/` — search\n" +
+	"- `f` — filter by tag\n" +
+	"- `p` — filter by epic\n" +
+	"- `s` — cycle status\n" +
+	"- `t` — trash\n" +
+	"- `1`–`4` — sort by that column (repeat flips direction, `0` restores the store's order)\n" +
+	"- `v` — full-screen view\n" +
+	"- `Tab` — focus the detail\n" +
+	"- `w` — wiki\n" +
+	"- `q` — quit\n\n" +
+	"## Detail (Tab)\n" +
+	"- `↑` / `↓` — scroll\n" +
+	"- `n` / `p` — walk links\n" +
+	"- `Enter` — follow\n" +
+	"- `Tab` / `Esc` — back\n\n" +
+	"## Viewer / help / any modal\n" +
+	"- `↑` / `↓` — scroll\n" +
+	"- `Esc` (or `q`) — close\n\n" +
+	"## Trash (t)\n" +
+	"- `r` — restore the selected task\n"
 
 func (m *tui) scrollToLink() {
 	if m.linkSel < 0 || m.linkSel >= len(m.links) {
