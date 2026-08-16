@@ -1,11 +1,17 @@
 package main
 
 import (
+	"strings"
+
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/huh"
 
 	"github.com/ks-tool/todo-mcp/internal/todo"
 )
+
+// newEpicSentinel is the epic-select option that means "create a new one", its name taken from the
+// input field beside it.
+const newEpicSentinel = "＋ new epic…"
 
 // uiForm is one modal interaction: a huh form plus what to do when it completes. huh forms are
 // bubbletea models themselves, so update delegates to them and watches the state — completed runs
@@ -59,19 +65,30 @@ func (m *tui) openTaskForm(t *todo.Task) tea.Cmd {
 	} else if len(m.tags) > 0 {
 		cur.Tags = append([]string(nil), m.tags...) // the active filter is the natural default for a new task
 	}
-	epic, tags := cur.Epic, joinComma(cur.Tags)
+	tags := joinComma(cur.Tags)
 	pri, dep, text := cur.Priority, cur.DepText, cur.Text
 
-	// slug and touchpoints are not edited here — they are `todo path`/linking metadata, kept off the
-	// human form; an edit carries the stored values through untouched (the CLI is where they change).
+	// The epic is CHOSEN from the ones that exist, not typed — a free-text epic is how a project ends
+	// up with two spellings of the same thing. A "＋ new epic…" option, with the input beside it,
+	// keeps creating one in the same window.
+	epicSel, newEpicOpts := m.epicField(cur.Epic)
+	newEpicName := ""
+
+	// slug and touchpoints are not edited here — they are path/linking metadata, kept off the human
+	// form; an edit carries the stored values through untouched (the CLI is where they change).
 	f := huh.NewForm(huh.NewGroup(
-		huh.NewInput().Title("epic").Value(&epic),
+		huh.NewSelect[string]().Title("epic").Options(newEpicOpts...).Value(&epicSel),
+		huh.NewInput().Title("new epic (used if ＋ new epic… is chosen)").Value(&newEpicName),
 		huh.NewInput().Title("tags (comma, optional)").Value(&tags),
 		huh.NewInput().Title("priority").Value(&pri),
 		huh.NewInput().Title("dep").Value(&dep),
 		huh.NewText().Title("text").Value(&text).Lines(8),
 	))
 	return m.openForm(f, func() {
+		epic := epicSel
+		if epic == newEpicSentinel {
+			epic = strings.TrimSpace(newEpicName)
+		}
 		if len(epic) == 0 || len(text) == 0 {
 			m.flash = "epic and text are required"
 			return
@@ -98,6 +115,32 @@ func (m *tui) openTaskForm(t *todo.Task) tea.Cmd {
 			m.flash = err.Error()
 		}
 	})
+}
+
+// epicField builds the epic selector for a task form: the epics that exist, plus a sentinel to
+// create one, with the current epic (or, for a new task, the project root) pre-selected. It returns
+// the pre-selection and the options.
+func (m *tui) epicField(current string) (string, []huh.Option[string]) {
+	epics, _ := m.store.Epics()
+	sel := current
+	if len(sel) == 0 {
+		if r := rootEpic(); len(r) > 0 {
+			sel = r
+		} else if len(epics) > 0 {
+			sel = epics[0]
+		} else {
+			sel = newEpicSentinel
+		}
+	}
+	opts := make([]huh.Option[string], 0, len(epics)+2)
+	if sel != newEpicSentinel && !contains(epics, sel) {
+		opts = append(opts, huh.NewOption(sel, sel)) // a current/default epic not yet in the backlog
+	}
+	for _, e := range epics {
+		opts = append(opts, huh.NewOption(e, e))
+	}
+	opts = append(opts, huh.NewOption(newEpicSentinel, newEpicSentinel))
+	return sel, opts
 }
 
 func (m *tui) openDocForm(d *todo.Doc) tea.Cmd {

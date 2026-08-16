@@ -548,6 +548,25 @@ WHERE t.deleted_at = '' ORDER BY je.value`)
 	return out, rows.Err()
 }
 
+// Epics is every distinct epic the live backlog uses, sorted — the existing projects a UI offers to
+// file a task under, so an epic is chosen from what exists rather than retyped and misspelled.
+func (s *Store) Epics() ([]string, error) {
+	rows, err := s.db.Query(`SELECT DISTINCT epic FROM tasks WHERE deleted_at = '' AND epic != '' ORDER BY epic`)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = rows.Close() }()
+	var out []string
+	for rows.Next() {
+		var e string
+		if err := rows.Scan(&e); err != nil {
+			return nil, err
+		}
+		out = append(out, e)
+	}
+	return out, rows.Err()
+}
+
 // BackupTo writes a consistent snapshot of the whole database to path, via VACUUM INTO: a
 // transactional copy made by SQLite itself, safe while the database is open — a plain file copy
 // can catch the middle of a write. It refuses an existing destination rather than overwriting a

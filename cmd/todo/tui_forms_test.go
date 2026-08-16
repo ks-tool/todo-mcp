@@ -35,6 +35,33 @@ func key(s string) tea.KeyMsg {
 	return tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(s)}
 }
 
+// TestEpicField covers todomcp-09: the epic is chosen from the ones that exist, with a sentinel to
+// create a new one; the current epic pre-selects, a new task defaults to the first existing epic,
+// and an epic not yet in the backlog is added as its own option so it can still be shown.
+func TestEpicField(t *testing.T) {
+	t.Setenv("TODO_EPICS", "") // no project root, so the default falls to the first existing epic
+	m := tuiWith(t,
+		todo.Task{ID: "a-01", Epic: "alpha", Text: "x"},
+		todo.Task{ID: "b-01", Epic: "beta", Text: "y"},
+	)
+	sel, opts := m.epicField("beta")
+	if sel != "beta" {
+		t.Errorf("an existing epic must pre-select, got %q", sel)
+	}
+	if len(opts) != 3 { // alpha, beta, sentinel
+		t.Errorf("want alpha+beta+sentinel, got %d options", len(opts))
+	}
+	if last := opts[len(opts)-1]; last.Value != newEpicSentinel {
+		t.Errorf("the last option must be the new-epic sentinel, got %q", last.Value)
+	}
+	if sel, _ := m.epicField(""); sel != "alpha" {
+		t.Errorf("a new task with no root epic must default to the first, got %q", sel)
+	}
+	if sel, opts := m.epicField("gamma"); sel != "gamma" || len(opts) != 4 {
+		t.Errorf("an epic not in the backlog must be shown as its own option: sel=%q n=%d", sel, len(opts))
+	}
+}
+
 // TestCommentFormOpens covers todomcp-08: 'm' on a selected task opens a modal, and it opens even on
 // a done task — a comment is settable after close.
 func TestCommentFormOpens(t *testing.T) {
