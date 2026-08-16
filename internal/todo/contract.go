@@ -42,26 +42,33 @@ type Contract struct {
 	Breaks  []ContractBreak `json:"breaks"`
 }
 
-// CheckContractFiles loads two OpenAPI (JSON) specs and compares the consumer's expectations against
-// the provider's current surface.
+// CheckContractFiles loads two API specs and compares the consumer's expectations against the
+// provider's current surface. The format is detected from the file (OpenAPI JSON/YAML, an AsyncAPI
+// document, a .proto, or a GraphQL SDL); both sides are expected to be the same kind.
 func CheckContractFiles(consumerPath, providerPath string) (*Contract, error) {
-	cons, err := loadSpec(consumerPath)
+	cons, err := endpointsFromFile(consumerPath)
 	if err != nil {
 		return nil, fmt.Errorf("consumer spec: %w", err)
 	}
-	prov, err := loadSpec(providerPath)
+	prov, err := endpointsFromFile(providerPath)
 	if err != nil {
 		return nil, fmt.Errorf("provider spec: %w", err)
 	}
-	return CheckContract(cons, prov), nil
+	return compareEndpoints(cons, prov), nil
 }
 
-// CheckContract compares a consumer spec against a provider spec.
+// CheckContract compares a consumer OpenAPI spec against a provider one.
 func CheckContract(consumer, provider *oaSpec) *Contract {
-	prov := endpoints(provider)
+	return compareEndpoints(endpoints(consumer), endpoints(provider))
+}
+
+// compareEndpoints is the protocol-agnostic core: whatever the format, each side is reduced to a
+// map of "identity → Endpoint", and the breaks are the same — an endpoint the consumer needs that
+// the provider dropped (orphan-call), or one whose shape diverged (schema-drift).
+func compareEndpoints(consumer, provider map[string]Endpoint) *Contract {
 	c := &Contract{}
-	for _, ce := range endpoints(consumer) {
-		pe, ok := prov[ce.key()]
+	for _, ce := range consumer {
+		pe, ok := provider[ce.key()]
 		if !ok {
 			c.Breaks = append(c.Breaks, ContractBreak{Kind: "orphan-call", Method: ce.Method, Path: ce.Path,
 				Detail: "the provider no longer offers this endpoint"})
@@ -76,6 +83,19 @@ func CheckContract(consumer, provider *oaSpec) *Contract {
 	sort.Slice(c.Matched, func(i, j int) bool { return c.Matched[i].key() < c.Matched[j].key() })
 	sort.Slice(c.Breaks, func(i, j int) bool { return c.Breaks[i].Method+c.Breaks[i].Path < c.Breaks[j].Method+c.Breaks[j].Path })
 	return c
+}
+
+// endpointsFromFile reduces one spec file to its endpoints, picking the parser by format: a .proto
+// by extension, otherwise an OpenAPI JSON/YAML document.
+func endpointsFromFile(path string) (map[string]Endpoint, error) {
+	if strings.HasSuffix(strings.ToLower(path), ".proto") {
+		return protoEndpointsFile(path)
+	}
+	sp, err := loadSpec(path)
+	if err != nil {
+		return nil, err
+	}
+	return endpoints(sp), nil
 }
 
 // signatureDiff reports how a consumer's expected shape differs from the provider's, or "" when they

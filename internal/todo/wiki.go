@@ -140,8 +140,8 @@ func (s *Store) TasksOf(docID string) ([]Task, error) {
 // SplitSection reads the one-level hierarchy out of a path: "threat-model/02-node" is page
 // "02-node" in section "threat-model"; a bare path is a page in no section.
 func SplitSection(path string) (section, page string) {
-	if i := strings.IndexByte(path, '/'); i >= 0 {
-		return path[:i], path[i+1:]
+	if before, after, ok := strings.Cut(path, "/"); ok {
+		return before, after
 	}
 	return "", path
 }

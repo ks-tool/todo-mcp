@@ -107,7 +107,7 @@ func TestHelpAndStatusLineFits(t *testing.T) {
 // whose list is height-capped, so even many epics stay inside the terminal instead of overflowing.
 func TestAddEpicModalFitsTerminal(t *testing.T) {
 	var tasks []todo.Task
-	for i := 0; i < 40; i++ {
+	for i := range 40 {
 		tasks = append(tasks, todo.Task{ID: fmt.Sprintf("e%02d-01", i), Epic: fmt.Sprintf("epic-%02d", i), Text: "x"})
 	}
 	m := tuiWith(t, tasks...)

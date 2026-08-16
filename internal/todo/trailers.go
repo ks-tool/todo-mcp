@@ -140,7 +140,7 @@ var tagRef = regexp.MustCompile(`(?:^|\s)#([A-Za-z0-9][\w-]*)`)
 // same slices. Lower-casing and de-duplication happen on store (normTags).
 func tagsFromMessage(msg string) []string {
 	var out []string
-	for _, line := range strings.Split(msg, "\n") {
+	for line := range strings.SplitSeq(msg, "\n") {
 		rest, ok := cutTagsTrailer(line)
 		if !ok {
 			continue

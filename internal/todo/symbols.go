@@ -300,7 +300,7 @@ func (s *Store) detectCommunities(repo string) error {
 	}
 	sort.Strings(sids)
 
-	for iter := 0; iter < 20; iter++ {
+	for range 20 {
 		changed := false
 		for _, sid := range sids {
 			nbrs := adj[sid]

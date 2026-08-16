@@ -711,11 +711,12 @@ func (m *tui) detailContent() string {
 		line += strings.Count(s, "\n") + 1
 	}
 
-	head := stTitle.Render(t.ID) + "  [" + string(t.Status) + "]  " + t.Priority
+	var head strings.Builder
+	head.WriteString(stTitle.Render(t.ID) + "  [" + string(t.Status) + "]  " + t.Priority)
 	for _, tag := range t.Tags {
-		head += "  " + m.lnk("tag", tag, "#"+tag, line)
+		head.WriteString("  " + m.lnk("tag", tag, "#"+tag, line))
 	}
-	writeln(head)
+	writeln(head.String())
 	writeln("")
 	writeln(stDim.Render("epic  ") + t.Epic)
 	// slug and touchpoints are deliberately not shown: they are metadata for `todo path` and doc

@@ -28,7 +28,7 @@ func rootEpic() string {
 
 func splitComma(s string) []string {
 	var out []string
-	for _, p := range strings.Split(s, ",") {
+	for p := range strings.SplitSeq(s, ",") {
 		if p = strings.TrimSpace(p); len(p) > 0 {
 			out = append(out, p)
 		}

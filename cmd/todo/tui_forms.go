@@ -1,6 +1,7 @@
 package main
 
 import (
+	"slices"
 	"strings"
 	"time"
 
@@ -343,12 +344,7 @@ func (m *tui) openEpicFilter() tea.Cmd {
 }
 
 func contains(xs []string, x string) bool {
-	for _, v := range xs {
-		if v == x {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(xs, x)
 }
 
 func (m *tui) openConfirm(prompt string, act func()) tea.Cmd {
@@ -364,14 +360,14 @@ func (m *tui) openConfirm(prompt string, act func()) tea.Cmd {
 }
 
 func joinComma(xs []string) string {
-	out := ""
+	var out strings.Builder
 	for i, x := range xs {
 		if i > 0 {
-			out += ", "
+			out.WriteString(", ")
 		}
-		out += x
+		out.WriteString(x)
 	}
-	return out
+	return out.String()
 }
 
 func (f *uiForm) View() string { return f.form.View() }
