@@ -62,6 +62,29 @@ func TestEpicField(t *testing.T) {
 	}
 }
 
+// TestEpicFilterNarrows covers todomcp-13: the TUI filter takes an epic, threaded into reload, and
+// 'p' opens the picker.
+func TestEpicFilterNarrows(t *testing.T) {
+	m := tuiWith(t,
+		todo.Task{ID: "a-01", Epic: "alpha", Status: todo.StatusOpen, Text: "x"},
+		todo.Task{ID: "b-01", Epic: "beta", Status: todo.StatusOpen, Text: "y"},
+	)
+	if len(m.tasks) != 2 {
+		t.Fatalf("want 2 tasks unfiltered, got %d", len(m.tasks))
+	}
+	m.epicF = "alpha"
+	m.reload()
+	if len(m.tasks) != 1 || m.tasks[0].Epic != "alpha" {
+		t.Errorf("the epic filter must narrow to alpha, got %d", len(m.tasks))
+	}
+	m.epicF = ""
+	m.reload()
+	m.Update(key("p"))
+	if m.focus != focusForm || m.form == nil {
+		t.Errorf("p must open the epic filter modal; focus=%v", m.focus)
+	}
+}
+
 // TestEscClosesModal covers todomcp-10: Esc cancels any modal, closing it without saving.
 func TestEscClosesModal(t *testing.T) {
 	m := tuiWith(t, todo.Task{ID: "a-01", Epic: "a", Text: "x"})

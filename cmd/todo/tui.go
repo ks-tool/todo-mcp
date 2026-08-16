@@ -27,7 +27,8 @@ import (
 // where r restores it. There is no hard delete in the interface at all.
 //
 // Keys — list: ↑/↓ move · Enter/e edit · a add · d delete · v full-screen view · / search ·
-// f cycle the tag filter · s cycle status · t trash · c commit · m comment · l link a doc · w wiki ·
+// p filter by epic · f cycle the tag filter · s cycle status · t trash · c commit · m comment ·
+// l link a doc · w wiki ·
 // 1–4 sort by that column (the same digit flips the direction, 0 restores the store's order) ·
 // Tab focus the detail · q quit. Detail: ↑/↓ scroll · n/p walk links · Enter follow · Tab/Esc
 // back. In the trash: r restore.
@@ -67,6 +68,7 @@ type tui struct {
 	tasks   []todo.Task
 	docs    []todo.Doc
 	tags    []string // the tag filter, ALL must match; empty = everything
+	epicF   string   // the epic filter (a project); empty = every epic
 	statusF todo.Status
 	search  string
 	trash   bool
@@ -130,7 +132,7 @@ func (m *tui) reload() {
 		if m.trash {
 			m.tasks, err = m.store.Trash()
 		} else {
-			m.tasks, err = m.store.List(todo.Filter{Status: m.statusF, Tags: m.tags, Search: m.search})
+			m.tasks, err = m.store.List(todo.Filter{Status: m.statusF, Tags: m.tags, Epic: m.epicF, Search: m.search})
 		}
 		if err != nil {
 			m.flash = err.Error()
@@ -263,6 +265,10 @@ func (m *tui) updateList(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if m.mode == modeTasks {
 			return m, m.openTagFilter()
 		}
+	case "p":
+		if m.mode == modeTasks {
+			return m, m.openEpicFilter()
+		}
 	case "1", "2", "3", "4":
 		col := int(msg.String()[0] - '1')
 		if m.mode == modeDocs && col > 2 {
@@ -382,7 +388,7 @@ func (m *tui) follow(l uiLink) {
 		}
 		m.reload()
 	case "task":
-		m.mode, m.tags, m.search, m.statusF, m.trash = modeTasks, nil, "", "", false
+		m.mode, m.tags, m.epicF, m.search, m.statusF, m.trash = modeTasks, nil, "", "", "", false
 		m.reload()
 		for i, t := range m.tasks {
 			if t.ID == l.id {
@@ -784,6 +790,10 @@ func (m *tui) statusLine() string {
 	if len(tag) == 0 {
 		tag = "all"
 	}
+	ep := m.epicF
+	if len(ep) == 0 {
+		ep = "all"
+	}
 	stf := string(m.statusF)
 	if len(stf) == 0 {
 		stf = "any"
@@ -797,6 +807,6 @@ func (m *tui) statusLine() string {
 		n = len(m.docs)
 	}
 	return stStatus.Render(fmt.Sprintf(
-		" %s  tag:%s  status:%s%s  |  %d shown  |  a add · e edit · d del · c commit · m comment · l link · t trash · s status · f tag · 1-4 sort · Tab detail · / search · v view · w wiki · q quit",
-		scope, tag, stf, srch, n))
+		" %s  epic:%s  tag:%s  status:%s%s  |  %d shown  |  a add · e edit · d del · c commit · m comment · l link · t trash · s status · p epic · f tag · 1-4 sort · Tab detail · / search · v view · w wiki · q quit",
+		scope, ep, tag, stf, srch, n))
 }

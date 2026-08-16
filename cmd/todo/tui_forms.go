@@ -261,6 +261,30 @@ func (m *tui) openTagFilter() tea.Cmd {
 	})
 }
 
+// allEpicsSentinel is the epic-filter option that clears the filter — every epic.
+const allEpicsSentinel = "(all epics)"
+
+// openEpicFilter narrows the list to one epic — the coarse project axis that pairs with the tag
+// filter: epic first (which project), then tags (which slice), so the tag list stays legible. The
+// epic is picked from the ones that exist, with an option to clear back to all.
+func (m *tui) openEpicFilter() tea.Cmd {
+	epics, err := m.store.Epics()
+	if err != nil || len(epics) == 0 {
+		m.flash = "the backlog uses no epics yet"
+		return nil
+	}
+	opts := make([]huh.Option[string], 0, len(epics)+1)
+	opts = append(opts, huh.NewOption(allEpicsSentinel, ""))
+	for _, e := range epics {
+		opts = append(opts, huh.NewOption(e, e))
+	}
+	sel := m.epicF
+	f := huh.NewForm(huh.NewGroup(
+		huh.NewSelect[string]().Title("filter by epic (project)").Options(opts...).Value(&sel),
+	))
+	return m.openForm(f, func() { m.epicF = sel })
+}
+
 func contains(xs []string, x string) bool {
 	for _, v := range xs {
 		if v == x {
