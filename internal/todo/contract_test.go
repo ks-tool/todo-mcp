@@ -56,3 +56,58 @@ func TestCheckContract(t *testing.T) {
 		t.Errorf("a spec against itself must be intact: matched=%d breaks=%d", len(same.Matched), len(same.Breaks))
 	}
 }
+
+// TestCheckContractYAML covers graphify-07: the same check works on YAML specs — loadSpec detects
+// the format by extension and decodes YAML through the same struct.
+func TestCheckContractYAML(t *testing.T) {
+	providerYAML := "" +
+		"paths:\n" +
+		"  /users/{id}:\n" +
+		"    get:\n" +
+		"      responses:\n" +
+		"        '200':\n" +
+		"          content:\n" +
+		"            application/json:\n" +
+		"              schema:\n" +
+		"                properties:\n" +
+		"                  id: {}\n" +
+		"                  name: {}\n"
+	consumerYAML := providerYAML +
+		"                  email: {}\n" +
+		"  /legacy:\n" +
+		"    get:\n" +
+		"      responses:\n" +
+		"        '200':\n" +
+		"          content:\n" +
+		"            application/json:\n" +
+		"              schema:\n" +
+		"                properties:\n" +
+		"                  id: {}\n"
+
+	dir := t.TempDir()
+	pp := filepath.Join(dir, "provider.yaml")
+	cp := filepath.Join(dir, "consumer.yaml")
+	if err := os.WriteFile(pp, []byte(providerYAML), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(cp, []byte(consumerYAML), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	c, err := CheckContractFiles(cp, pp)
+	if err != nil {
+		t.Fatal(err)
+	}
+	kinds := map[string]ContractBreak{}
+	for _, b := range c.Breaks {
+		kinds[b.Kind] = b
+	}
+	if len(c.Breaks) != 2 {
+		t.Fatalf("want 2 breaks from YAML specs, got %d: %+v", len(c.Breaks), c.Breaks)
+	}
+	if o, ok := kinds["orphan-call"]; !ok || o.Path != "/legacy" {
+		t.Errorf("orphan-call wrong: %+v", o)
+	}
+	if d, ok := kinds["schema-drift"]; !ok || !strings.Contains(d.Detail, "email") {
+		t.Errorf("schema-drift wrong: %+v", d)
+	}
+}

@@ -4,10 +4,11 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"slices"
 	"sort"
 	"strings"
 
-	"slices"
+	yaml "go.yaml.in/yaml/v3"
 )
 
 // API-contract checking between two services. The two OpenAPI specs — what the CONSUMER was built
@@ -137,11 +138,46 @@ func loadSpec(path string) (*oaSpec, error) {
 	if err != nil {
 		return nil, err
 	}
+	b, err = toJSON(path, b)
+	if err != nil {
+		return nil, err
+	}
 	var s oaSpec
 	if err := json.Unmarshal(b, &s); err != nil {
 		return nil, err
 	}
 	return &s, nil
+}
+
+// toJSON returns the spec as JSON bytes: passed through when it already is JSON, or decoded from
+// YAML and re-encoded when it is not — so the one struct (with its json tags) parses both. YAML is a
+// superset of JSON, so a spec is treated as JSON only when it clearly is: a .json name, or content
+// whose first non-space byte opens an object or array.
+func toJSON(path string, b []byte) ([]byte, error) {
+	if looksJSON(path, b) {
+		return b, nil
+	}
+	var v any
+	if err := yaml.Unmarshal(b, &v); err != nil {
+		return nil, err
+	}
+	return json.Marshal(v)
+}
+
+func looksJSON(path string, b []byte) bool {
+	switch {
+	case strings.HasSuffix(strings.ToLower(path), ".json"):
+		return true
+	case strings.HasSuffix(strings.ToLower(path), ".yaml"), strings.HasSuffix(strings.ToLower(path), ".yml"):
+		return false
+	}
+	for _, c := range b {
+		if c == ' ' || c == '\t' || c == '\n' || c == '\r' {
+			continue
+		}
+		return c == '{' || c == '['
+	}
+	return true
 }
 
 // endpoints flattens a spec into a map of "METHOD /path" → Endpoint with its shallow signature.

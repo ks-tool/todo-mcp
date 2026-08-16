@@ -388,7 +388,7 @@ func runMCP(st *todo.Store) error {
 		})
 
 	mcp.AddTool(s, &mcp.Tool{Name: "contract",
-		Description: "Check an API contract between two services from their OpenAPI (JSON) specs. consumer is the spec the caller was built against, provider the spec the service now offers. Returns the endpoints present and compatible in both, and the breaks: orphan-call (an endpoint the provider dropped) and schema-drift (a request/response shape that diverged)."},
+		Description: "Check an API contract between two services from their OpenAPI (JSON or YAML) specs. consumer is the spec the caller was built against, provider the spec the service now offers. Returns the endpoints present and compatible in both, and the breaks: orphan-call (an endpoint the provider dropped) and schema-drift (a request/response shape that diverged)."},
 		func(_ context.Context, _ *mcp.CallToolRequest, in contractIn) (*mcp.CallToolResult, contractOut, error) {
 			c, err := todo.CheckContractFiles(in.Consumer, in.Provider)
 			if err != nil {
