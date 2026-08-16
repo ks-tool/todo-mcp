@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 
 	"github.com/ks-tool/todo-mcp/internal/todo"
 )
@@ -35,6 +36,41 @@ func key(s string) tea.KeyMsg {
 		return tea.KeyMsg{Type: tea.KeyEsc}
 	}
 	return tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(s)}
+}
+
+// TestHelpAndStatusLineFits covers todomcp-19: '?' opens the full key help in the viewer, the rare
+// keys live there (not in the status line), and the status line never exceeds the terminal width.
+func TestHelpAndStatusLineFits(t *testing.T) {
+	m := tuiWith(t, todo.Task{ID: "a-01", Epic: "a", Status: todo.StatusOpen, Text: "x"})
+
+	// '?' opens help.
+	m.Update(key("?"))
+	if m.focus != focusViewer || !m.helpOpen {
+		t.Fatalf("? must open the help viewer; focus=%v helpOpen=%v", m.focus, m.helpOpen)
+	}
+
+	// The status line stays within the terminal width even on a narrow screen.
+	for _, w := range []int{60, 80, 100} {
+		m.focus, m.helpOpen = focusList, false
+		m.width, m.height = w, 30
+		m.layout()
+		m.reload()
+		if got := lipgloss.Width(m.statusLine()); got > w {
+			t.Errorf("status line is %d wide on a %d-column terminal", got, w)
+		}
+		// The rare keys must NOT be in the status line — they belong to help.
+		for _, rare := range []string{"commit", "comment", "sort", "trash"} {
+			if strings.Contains(m.statusLine(), rare) {
+				t.Errorf("rare key %q must not be in the status line at width %d", rare, w)
+			}
+		}
+	}
+	// …but they ARE in the help text.
+	for _, rare := range []string{"commit", "comment", "sort", "trash"} {
+		if !strings.Contains(helpText, rare) {
+			t.Errorf("help must document %q", rare)
+		}
+	}
 }
 
 // TestAddEpicModalFitsTerminal covers todomcp-15: the add flow picks the epic in its own modal

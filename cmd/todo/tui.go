@@ -28,7 +28,7 @@ import (
 //
 // Keys — list: ↑/↓ move · Enter/e edit · a add · d delete · v full-screen view · / search ·
 // p filter by epic · f cycle the tag filter · s cycle status · t trash · c commit · m comment ·
-// l link a doc · w wiki ·
+// l link a doc · w wiki · ? help (the full list; only common keys are in the status line) ·
 // 1–4 sort by that column (the same digit flips the direction, 0 restores the store's order) ·
 // Tab focus the detail · q quit. Detail: ↑/↓ scroll · n/p walk links · Enter follow · Tab/Esc
 // back. In the trash: r restore.
@@ -86,6 +86,7 @@ type tui struct {
 
 	width, height int
 	flash         string
+	helpOpen      bool // the viewer is showing the key help, not a task
 	darkBG        bool
 	mdRender      *glamour.TermRenderer
 }
@@ -291,6 +292,8 @@ func (m *tui) updateList(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.focus = focusSearch
 	case "v":
 		m.openViewer()
+	case "?":
+		m.openHelp()
 	case "c":
 		if t, ok := m.selectedTask(); ok {
 			return m, m.openCommitForm(t)
@@ -345,8 +348,9 @@ func (m *tui) updateDetail(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 func (m *tui) updateViewer(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
-	case "esc", "q", "v":
+	case "esc", "q", "v", "?":
 		m.focus = focusList
+		m.helpOpen = false
 	default:
 		var cmd tea.Cmd
 		m.viewer, cmd = m.viewer.Update(msg)
@@ -411,10 +415,39 @@ func (m *tui) follow(l uiLink) {
 }
 
 func (m *tui) openViewer() {
+	m.helpOpen = false
 	m.viewer.SetContent(m.detailContent())
 	m.viewer.GotoTop()
 	m.focus = focusViewer
 }
+
+// openHelp shows the full key reference in the viewer. Only the common keys live in the status line;
+// the rest — which had grown the line past the terminal width — are here, one scrollable screen.
+func (m *tui) openHelp() {
+	m.helpOpen = true
+	m.viewer.SetContent(m.markdown(helpText))
+	m.viewer.GotoTop()
+	m.focus = focusViewer
+}
+
+const helpText = `# Keys
+
+## List
+- ` + "`↑`/`↓`" + ` move · ` + "`Enter`/`e`" + ` edit · ` + "`a`" + ` add · ` + "`d`" + ` delete
+- ` + "`c`" + ` commit · ` + "`m`" + ` comment · ` + "`l`" + ` link a doc
+- ` + "`/`" + ` search · ` + "`f`" + ` filter by tag · ` + "`p`" + ` filter by epic · ` + "`s`" + ` cycle status · ` + "`t`" + ` trash
+- ` + "`1`–`4`" + ` sort by that column (repeat flips direction, ` + "`0`" + ` restores the store's order)
+- ` + "`v`" + ` full-screen view · ` + "`Tab`" + ` focus the detail · ` + "`w`" + ` wiki · ` + "`q`" + ` quit
+
+## Detail (Tab)
+- ` + "`↑`/`↓`" + ` scroll · ` + "`n`/`p`" + ` walk links · ` + "`Enter`" + ` follow · ` + "`Tab`/`Esc`" + ` back
+
+## Viewer / help / any modal
+- ` + "`↑`/`↓`" + ` scroll · ` + "`Esc`" + ` (or ` + "`q`" + `) closes it
+
+## Trash (` + "`t`" + `)
+- ` + "`r`" + ` restore the selected task
+`
 
 func (m *tui) scrollToLink() {
 	if m.linkSel < 0 || m.linkSel >= len(m.links) {
@@ -753,8 +786,11 @@ func (m *tui) View() string {
 				stBorder.Render(m.form.View()))
 		}
 	case focusViewer:
-		return stBorder.Width(m.width-2).Render(m.viewer.View()) + "\n" +
-			stStatus.Render(" VIEW  ↑↓ scroll · Esc/q/v back")
+		label := " VIEW  ↑↓ scroll · Esc/q/v back"
+		if m.helpOpen {
+			label = " HELP  ↑↓ scroll · Esc/q/? back"
+		}
+		return stBorder.Width(m.width-2).Render(m.viewer.View()) + "\n" + stStatus.Render(label)
 	}
 
 	list := m.table.View()
@@ -806,7 +842,10 @@ func (m *tui) statusLine() string {
 	if m.mode == modeDocs {
 		n = len(m.docs)
 	}
-	return stStatus.Render(fmt.Sprintf(
-		" %s  epic:%s  tag:%s  status:%s%s  |  %d shown  |  a add · e edit · d del · c commit · m comment · l link · t trash · s status · p epic · f tag · 1-4 sort · Tab detail · / search · v view · w wiki · q quit",
-		scope, ep, tag, stf, srch, n))
+	// The filter state comes first and the key hints last, then the whole line is truncated to the
+	// terminal width so it can never wrap onto a second row — the full key list lives behind ? (help).
+	line := fmt.Sprintf(
+		" %s  epic:%s  tag:%s  status:%s%s  |  %d shown  |  a add · e edit · / search · f tag · p epic · w wiki · ? help · q quit",
+		scope, ep, tag, stf, srch, n)
+	return stStatus.Render(trunc(line, m.width))
 }
