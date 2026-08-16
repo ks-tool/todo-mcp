@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"os"
 	"sort"
 	"strings"
 	"time"
@@ -337,6 +338,8 @@ func (m *tui) updateList(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.openViewer()
 	case "?":
 		m.openHelp()
+	case "x":
+		m.export()
 	case "c":
 		if t, ok := m.selectedTask(); ok {
 			return m, m.openCommitForm(t)
@@ -457,6 +460,33 @@ func (m *tui) follow(l uiLink) {
 	}
 }
 
+// export writes the current view to a markdown file in the working directory — the backlog (the
+// current filter's tasks, via Render) or the wiki (its pages, via RenderDocs) — and flashes where it
+// went. It is the interactive twin of `todo render`.
+func (m *tui) export() {
+	var name, content string
+	if m.mode == modeDocs {
+		ds, err := m.store.ListDocs(m.search)
+		if err != nil {
+			m.flash = err.Error()
+			return
+		}
+		name, content = "wiki.md", todo.RenderDocs(ds)
+	} else {
+		ts, err := m.store.List(todo.Filter{Status: m.statusF, Tags: m.tags, Epic: m.epicF, Search: m.search})
+		if err != nil {
+			m.flash = err.Error()
+			return
+		}
+		name, content = "backlog.md", todo.Render(ts)
+	}
+	if err := os.WriteFile(name, []byte(content), 0o644); err != nil {
+		m.flash = err.Error()
+		return
+	}
+	m.flash = "exported " + name
+}
+
 func (m *tui) openViewer() {
 	m.helpOpen = false
 	m.viewer.SetContent(m.detailContent())
@@ -493,6 +523,7 @@ const helpText = "# Keys\n\n" +
 	"- `v` — full-screen view\n" +
 	"- `Tab` — focus the detail\n" +
 	"- `w` — wiki\n" +
+	"- `x` — export the current view to markdown (backlog.md / wiki.md)\n" +
 	"- `q` — quit\n\n" +
 	"## Detail (Tab)\n" +
 	"- `↑` / `↓` — scroll\n" +

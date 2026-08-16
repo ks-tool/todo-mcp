@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -11,6 +12,39 @@ import (
 
 	"github.com/ks-tool/todo-mcp/internal/todo"
 )
+
+// TestExportMarkdown covers todomcp-24: 'x' writes the current view to markdown — the backlog to
+// backlog.md, the wiki to wiki.md.
+func TestExportMarkdown(t *testing.T) {
+	wd, _ := os.Getwd()
+	t.Cleanup(func() { _ = os.Chdir(wd) })
+	if err := os.Chdir(t.TempDir()); err != nil {
+		t.Fatal(err)
+	}
+	m := tuiWith(t, todo.Task{ID: "a-01", Epic: "Alpha", Status: todo.StatusOpen, Priority: "P1", Text: "do a thing"})
+	m.export()
+	b, err := os.ReadFile("backlog.md")
+	if err != nil {
+		t.Fatalf("backlog.md not written: %v", err)
+	}
+	if !strings.Contains(string(b), "## Alpha") || !strings.Contains(string(b), "do a thing") {
+		t.Errorf("backlog export missing content:\n%s", b)
+	}
+
+	if err := m.store.PutDoc(todo.Doc{ID: "doc-x", Path: "x", Title: "X Design", Kind: "design", Body: "# X\nbody"}); err != nil {
+		t.Fatal(err)
+	}
+	m.mode = modeDocs
+	m.reload()
+	m.export()
+	wb, err := os.ReadFile("wiki.md")
+	if err != nil {
+		t.Fatalf("wiki.md not written: %v", err)
+	}
+	if !strings.Contains(string(wb), "X Design") || !strings.Contains(string(wb), "body") {
+		t.Errorf("wiki export missing content:\n%s", wb)
+	}
+}
 
 func tuiWith(t *testing.T, tasks ...todo.Task) *tui {
 	t.Helper()

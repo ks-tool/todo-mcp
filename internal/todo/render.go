@@ -30,6 +30,28 @@ func Render(tasks []Task) string {
 	return b.String()
 }
 
+// RenderDocs turns wiki pages into one markdown document — each page a section with its title, its
+// path and kind, then its body — so the whole wiki (or a filtered slice of it) exports as a single
+// file a person can read or keep.
+func RenderDocs(docs []Doc) string {
+	var b strings.Builder
+	for i, d := range docs {
+		if i > 0 {
+			b.WriteString("\n---\n\n")
+		}
+		b.WriteString("# ")
+		b.WriteString(d.Title)
+		b.WriteString("\n\n`")
+		b.WriteString(d.Path)
+		b.WriteString("` · ")
+		b.WriteString(d.Kind)
+		b.WriteString("\n\n")
+		b.WriteString(strings.TrimRight(d.Body, "\n"))
+		b.WriteByte('\n')
+	}
+	return b.String()
+}
+
 // renderLine is one task: the checkbox, the priority tag, the body, then the metadata that was
 // lifted into fields, put back in the order Import expects to read it — so a render can be imported
 // again with nothing lost.
