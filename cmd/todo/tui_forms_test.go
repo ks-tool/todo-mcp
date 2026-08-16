@@ -62,6 +62,24 @@ func TestEpicField(t *testing.T) {
 	}
 }
 
+// TestEscClosesModal covers todomcp-10: Esc cancels any modal, closing it without saving.
+func TestEscClosesModal(t *testing.T) {
+	m := tuiWith(t, todo.Task{ID: "a-01", Epic: "a", Text: "x"})
+	m.Update(key("a")) // open the add form
+	if m.focus != focusForm || m.form == nil {
+		t.Fatalf("the add form did not open; focus=%v", m.focus)
+	}
+	before, _ := m.store.List(todo.Filter{})
+	m.Update(key("esc"))
+	if m.focus != focusList || m.form != nil {
+		t.Fatalf("Esc must close the modal; focus=%v form=%v", m.focus, m.form != nil)
+	}
+	after, _ := m.store.List(todo.Filter{})
+	if len(after) != len(before) {
+		t.Errorf("Esc must not save a task: %d before, %d after", len(before), len(after))
+	}
+}
+
 // TestCommentFormOpens covers todomcp-08: 'm' on a selected task opens a modal, and it opens even on
 // a done task — a comment is settable after close.
 func TestCommentFormOpens(t *testing.T) {

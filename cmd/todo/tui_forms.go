@@ -35,6 +35,14 @@ func (m *tui) updateForm(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.focus = focusList
 		return m, nil
 	}
+	// Esc cancels ANY modal, uniformly — the same way ctrl+c aborts a huh form, but a key a person
+	// actually reaches for. Intercepted here rather than left to each form, so add, edit, commit,
+	// comment, the filters and every future modal close the same way, without saving.
+	if key, ok := msg.(tea.KeyMsg); ok && key.Type == tea.KeyEsc {
+		m.form = nil
+		m.focus = focusList
+		return m, nil
+	}
 	model, cmd := m.form.form.Update(msg)
 	if f, ok := model.(*huh.Form); ok {
 		m.form.form = f
